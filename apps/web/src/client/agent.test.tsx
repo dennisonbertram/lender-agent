@@ -83,6 +83,31 @@ describe("agent role summary invalidation", () => {
     expect(JSON.parse(String(posts[0]?.[1]?.body))).toMatchObject({ chainId: 8453 });
   });
 
+  it("rejects an explicitly selected unowned network before asking for a signature", async () => {
+    const { fetchMock, wrapper } = setup();
+    const partial = {
+      ...status(false),
+      networks: [
+        { chainId: 8453, deployed: true, added: false },
+        { chainId: 42161, deployed: true, added: false },
+      ],
+      eligibleChainIds: [8453],
+      canChat: false,
+    };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/agent")) return new Response(JSON.stringify(partial));
+      return new Response("{}", { status: 404 });
+    });
+    const { result } = renderHook(() => useAddAgent(signedSafe), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.add(42161)).rejects.toThrow(/not an owner.*Arbitrum.*owns it on Arbitrum/i);
+    });
+
+    expect(wallet.signTypedDataAsync).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/agent") && init?.method === "POST")).toBe(false);
+  });
+
   it("refreshes the Safe summary after a confirmed removal", async () => {
     const { queryClient, wrapper } = setup(true);
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");

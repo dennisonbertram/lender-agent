@@ -44,6 +44,11 @@ describe("NetworksPanel (BP-35)", () => {
     expect(screen.getByText("Confirm in your wallet: Arbitrum, 1 of 1.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Add agent to Arbitrum" }) as HTMLButtonElement).disabled).toBe(true);
   });
+  it("shows an actionable ownership error for the selected network", () => {
+    const message = "Your wallet is not an owner of this Safe on Arbitrum. Switch to a wallet that owns it on Arbitrum, then try again.";
+    render(<NetworksPanel {...base} error={message} />);
+    expect(screen.getByRole("alert").textContent).toContain(message);
+  });
   it("says so when every network is added", () => {
     render(<NetworksPanel {...base} rows={rows.slice(0, 3)} />);
     expect(screen.getByText("Every network is added.")).toBeTruthy();

@@ -86,8 +86,9 @@ export function AgentStepView({ safeAddress, createPath }: { safeAddress: string
           addStarted.current = true;
           void add.add().then((s) => { if (s.active && s.canChat) router.push(`/s/${safeAddress}/chat`); }).catch(() => {});
         }}
-        onSkip={() => router.push(canChat ? `/s/${safeAddress}` : "/onboarding")}
-        onOpenChat={() => router.push(canChat ? `/s/${safeAddress}/chat` : "/onboarding")}
+        onSkip={() => router.push(`/s/${safeAddress}`)}
+        onBackToSafes={() => router.push("/onboarding")}
+        onOpenChat={() => { if (canChat) router.push(`/s/${safeAddress}/chat`); }}
       />
     </OnboardingCard>
   );

@@ -63,10 +63,11 @@ describe("SafeStep", () => {
     ]} known={[{
       address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Pending Safe", pendingSetup: true,
       chainIds: [8453, 100], pendingChainIds: [100], availableChainIds: [8453],
-      discovery: { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Pending Safe", threshold: 1, ownerCount: 1, chainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: wallet }] }] },
+      discovery: { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Pending Safe", threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 4500, balanceChainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: wallet }] }] },
     }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     expect(screen.getByText(/Setup recovery is shown even though this Safe does not match/)).toBeTruthy();
+    expect(screen.getByText("$4,500 on Base")).toBeTruthy();
     fireEvent.click(screen.getByText("Address and signers on Base"));
     expect(screen.getByRole("link", { name: "View on Basescan" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "View on Arbiscan" })).toBeNull();

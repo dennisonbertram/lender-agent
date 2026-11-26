@@ -28,6 +28,8 @@ export type AgentStepProps = {
   error?: string | null;
   onAdd: () => void;
   onSkip?: () => void;
+  /** Returns to the Safe picker without opening this Safe. */
+  onBackToSafes?: () => void;
   /** Shown in the done state, where the action buttons were. */
   onOpenChat?: () => void;
   /** The Safe was just created in the app: the step bar is Name, Approvals, Review, Agent (OC-05). */
@@ -39,7 +41,7 @@ export type AgentStepProps = {
 };
 
 /** The agent step (BP-05, BP-06). No field for a key or a seed phrase, on purpose. */
-export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networks, progress, busy, done, canChat = true, ownsEligibleNetwork = true, error, onAdd, onSkip, onOpenChat, createPath, otherNetworks = [], onAddBase }: AgentStepProps) {
+export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networks, progress, busy, done, canChat = true, ownsEligibleNetwork = true, error, onAdd, onSkip, onBackToSafes, onOpenChat, createPath, otherNetworks = [], onAddBase }: AgentStepProps) {
   const many = networks.length > 1;
   const bar = onboardingBar({ screen: "agent", path: createPath ? "create" : "found", createStep: 0 });
   return (
@@ -56,7 +58,8 @@ export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networ
       {!canChat && (done ? (
         <div role="status" className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3 text-sm">
           <p>The agent is set up on networks where this wallet is an owner of the Safe. To use chat, connect a wallet that is an owner of this Safe on each lending network.</p>
-          {onSkip && <Button size="lg" variant="outline" onClick={onSkip}>Back to your Safes</Button>}
+          {onSkip && <Button size="lg" onClick={onSkip}>Open Safe overview</Button>}
+          {onBackToSafes && <Button size="lg" variant="outline" onClick={onBackToSafes}>Back to your Safes</Button>}
         </div>
       ) : networks.length > 0 ? (
         <p role="status" className="rounded-lg bg-muted/50 p-3 text-sm">Only networks where this wallet is an owner of this Safe and the Safe is deployed are listed. To use chat, connect a wallet that is an owner of this Safe on each lending network.</p>
@@ -97,7 +100,7 @@ export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networ
           <Button size="lg" disabled={busy} onClick={onAdd}>
             {busy ? <><Spinner /> Waiting for your wallet</> : error ? "Try again" : "Add Lender agent"}
           </Button>
-          {!busy && onSkip && <Button size="lg" variant="ghost" onClick={onSkip}>{canChat ? "Skip, add later in Settings" : "Back to your Safes"}</Button>}
+          {!busy && onSkip && <Button size="lg" variant="ghost" onClick={onSkip}>{canChat ? "Skip, add later in Settings" : "Open Safe overview"}</Button>}
         </div>
       )}
     </div>

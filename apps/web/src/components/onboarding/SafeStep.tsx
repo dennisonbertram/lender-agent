@@ -143,10 +143,10 @@ function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wal
         </span>
       ) : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
       {showApproval && <span className="text-xs text-muted-foreground">{approvalLabel(safe, verifiedChainIds, selectedChainId)}</span>}
-      {hasDistinctBalanceCoverage && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">
+      {(showBalanceAmount || hasDistinctBalanceCoverage) && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">
         {showBalanceAmount
           ? hasCompleteBalanceCoverage(safe)
-            ? `${usd(safe.balanceUsd)} across ${balanceChainIds.map(chainChipId).join(" and ")}`
+            ? `${usd(safe.balanceUsd)} ${balanceChainIds.length === 1 ? "on" : "across"} ${balanceChainIds.map(chainChipId).join(" and ")}`
             : `${usd(safe.balanceUsd)} found on ${balanceChainIds.map(chainChipId).join(" and ")}. Other balances are unavailable.`
           : `Total across ${balanceChainIds.map(chainChipId).join(" and ")}`}
       </span>}

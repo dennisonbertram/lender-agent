@@ -110,6 +110,7 @@ describe("AgentStepView", () => {
     render(<AgentStepView safeAddress={A} />);
     expect(replace).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Lender agent setup is complete for this wallet" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Safe overview" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Back to your Safes" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open chat" })).toBeNull();
   });
@@ -124,10 +125,15 @@ describe("AgentStepView", () => {
     expect(addAgent).toHaveBeenCalled();
     expect(push).not.toHaveBeenCalledWith(`/s/${A}/chat`);
   });
-  it("returns a partial owner to the Safe picker instead of opening a restricted overview", () => {
+  it("skip opens the authorized Safe overview for a partial owner", () => {
     status = { ...status, data: { active: false, canChat: false, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: false }] } };
     render(<AgentStepView safeAddress={A} />);
-    screen.getByRole("button", { name: "Back to your Safes" }).click();
-    expect(push).toHaveBeenCalledWith("/onboarding");
+    screen.getByRole("button", { name: "Open Safe overview" }).click();
+    expect(push).toHaveBeenCalledWith(`/s/${A}`);
+  });
+  it("keeps a separate link back to the Safe picker for a partial owner", () => {
+    status = { ...status, data: { active: false, canChat: false, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: false }] } };
+    render(<AgentStepView safeAddress={A} />);
+    expect(screen.getByRole("link", { name: "Back to your Safes" }).getAttribute("href")).toBe("/onboarding");
   });
 });
