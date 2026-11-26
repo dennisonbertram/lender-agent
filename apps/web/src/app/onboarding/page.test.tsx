@@ -61,17 +61,70 @@ afterEach(() => {
 });
 
 describe("onboarding page: a saved Safe whose setup stopped", () => {
-  it("keeps an owned Safe usable while also offering its unfinished setup", () => {
-    ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453] }];
-    mineData = [pendingSafe];
+  it("offers one setup recovery action instead of a second selectable row for a partly deployed Safe", () => {
+    ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 4500, balanceChainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: W1 }] }] }];
+    mineData = [{ ...pendingSafe, verifiedChainIds: [8453, 42161] }];
     render(<OnboardingPage />);
-    expect(screen.getAllByText("Holiday")).toHaveLength(2);
+    expect(screen.getAllByText("Holiday")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
-    expect(screen.getByText("Only you approve transactions.")).toBeTruthy();
+    expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
+    expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
+    expect(screen.getByText("$4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Only you approve/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Safe" }));
     expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
+  });
+
+  it("filters saved-only Safes using their owned network inventory", () => {
+    mineData = [
+      { ...pendingSafe, name: "Base saved", pendingSetup: false, createdChainIds: [], ownedChainIds: [8453], networks: [8453] },
+      { ...pendingSafe, id: 2, address: "0x60157EE8eA450d606F969acb7043DC2Fd6Aa50aB", name: "Arbitrum saved", pendingSetup: false, createdChainIds: [], ownedChainIds: [42161], networks: [42161] },
+    ];
+    render(<OnboardingPage />);
+    expect(screen.getByText("Base saved")).toBeTruthy();
+    expect(screen.getByText("Arbitrum saved")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Base" }));
+    expect(screen.getByText("Base saved")).toBeTruthy();
+    expect(screen.queryByText("Arbitrum saved")).toBeNull();
+  });
+
+  it("merges verified saved memberships with discovery without relabeling balance or approval coverage", () => {
+    ownedData = [{
+      address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 4500,
+      balanceChainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: W1 }] }],
+    }];
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [8453, 42161], verifiedChainIds: [8453, 42161], networks: [8453, 42161] }];
+    render(<OnboardingPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    expect(screen.getByText("Holiday")).toBeTruthy();
+    expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
+    expect(screen.getByText("Total across Base")).toBeTruthy();
+    expect(screen.getByText("Approval details unavailable on Arbitrum.")).toBeTruthy();
+    expect(screen.queryByText(/Approvals on Arbitrum/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Holiday.*Open Safe/ }));
+    expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
+  });
+
+  it("keeps a verified off-lending network in memberships without inventing approval details", () => {
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [], verifiedChainIds: [10], networks: [] }];
+    render(<OnboardingPage />);
+    expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Optimism");
+    expect(screen.getByText("Approval details unavailable on Optimism.")).toBeTruthy();
+  });
+
+  it("does not offer Open Safe when only off-lending ownership is verified and a tracked network is unowned", () => {
+    mineData = [{ ...pendingSafe, ownedChainIds: [], verifiedChainIds: [1], networks: [42161] }];
+    render(<OnboardingPage />);
+    expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open Safe" })).toBeNull();
+  });
+
+  it("keeps a pending-only Safe on the recovery path without an Open Safe action", () => {
+    mineData = [{ ...pendingSafe, ownedChainIds: [], verifiedChainIds: [], networks: [] }];
+    render(<OnboardingPage />);
+    expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open Safe" })).toBeNull();
   });
 
   it("is still offered when the wallet lookup found nothing, and resume re-checks the stored hash instead of paying again", async () => {
@@ -100,6 +153,19 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(api.setup).toHaveBeenCalledWith(SAFE_A, 8453);
     expect(api.setup).not.toHaveBeenCalledWith(SAFE_A, 8453, "0xhash");
     expect(api.payFee).not.toHaveBeenCalled();
+  });
+
+  it("shows a local Safe nickname in onboarding only for its owning wallet", async () => {
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [8453], networks: [8453] }];
+    const key = `la:safeNickname:${W1.toLowerCase()}:${SAFE_A.toLowerCase()}`;
+    localStorage.setItem(key, JSON.stringify("Holiday house"));
+    const { rerender } = render(<OnboardingPage />);
+    expect(await screen.findByText("Holiday house")).toBeTruthy();
+    expect(screen.queryByText("Holiday", { exact: true })).toBeNull();
+    wallet = W2;
+    rerender(<OnboardingPage />);
+    await waitFor(() => expect(screen.queryByText("Holiday house")).toBeNull());
+    expect(screen.getByText("Holiday", { exact: true })).toBeTruthy();
   });
 
   it("does not claim no Safe was saved while the saved list is loading", () => {

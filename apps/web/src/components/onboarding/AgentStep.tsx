@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { AddressText } from "@/components/ui/address";
 import type { SigningProgress } from "@/client/agent";
+import { onboardingBar } from "@/lib/step-bar";
 
 export const AGENT_CAN = ["See your balances", "Suggest transactions for you to sign"];
 export const AGENT_CANNOT = ["Sign or approve anything", "Move money on its own"];
@@ -20,9 +21,15 @@ export type AgentStepProps = {
   busy: boolean;
   /** Set once the server's read-back showed the agent. */
   done: boolean;
+  /** Whether the current wallet owns the Safe on every tracked served network, which chat requires. */
+  canChat?: boolean;
+  /** True when this wallet owns at least one deployed network supported by the agent. */
+  ownsEligibleNetwork?: boolean;
   error?: string | null;
   onAdd: () => void;
   onSkip?: () => void;
+  /** Returns to the Safe picker without opening this Safe. */
+  onBackToSafes?: () => void;
   /** Shown in the done state, where the action buttons were. */
   onOpenChat?: () => void;
   /** The Safe was just created in the app: the step bar is Name, Approvals, Review, Agent (OC-05). */
@@ -34,19 +41,29 @@ export type AgentStepProps = {
 };
 
 /** The agent step (BP-05, BP-06). No field for a key or a seed phrase, on purpose. */
-export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networks, progress, busy, done, error, onAdd, onSkip, onOpenChat, createPath, otherNetworks = [], onAddBase }: AgentStepProps) {
+export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networks, progress, busy, done, canChat = true, ownsEligibleNetwork = true, error, onAdd, onSkip, onBackToSafes, onOpenChat, createPath, otherNetworks = [], onAddBase }: AgentStepProps) {
   const many = networks.length > 1;
+  const bar = onboardingBar({ screen: "agent", path: createPath ? "create" : "found", createStep: 0 });
   return (
     <div className="flex flex-col gap-4">
       {!done && <a href="/onboarding" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">Back to your Safes</a>}
-      <StepBar {...(createPath ? { labels: ["Name", "Approvals", "Review", "Agent"], step: 3 } : { labels: ["Safe", "Agent"], step: 1 })} complete={done} />
-      <h1 className="text-lg font-medium outline-none">{done ? "Lender agent can now suggest transactions" : "Let Lender agent suggest transactions"}</h1>
+      {bar && <StepBar {...bar} complete={done} />}
+      <h1 className="text-lg font-medium outline-none">{done ? canChat ? "Lender agent can now suggest transactions" : "Lender agent setup is complete for this wallet" : "Let Lender agent suggest transactions"}</h1>
       <div className="flex flex-col gap-1 text-sm">
         <span className="font-medium">{safeName || "Safe"}</span>
         <AddressText address={safeAddress} chainId={chainId} showSafeApp />
         {networks.length > 0 && <span className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">On {networks.map((network, i) => <span key={`${network}-${i}`} className="inline-flex items-center gap-1">{i > 0 && "and"}<NetworkChip id={network} className="px-1.5 py-0" /></span>)}.</span>}
         <span className="text-xs text-muted-foreground">Safe calls this role a proposer.</span>
       </div>
+      {!canChat && (done ? (
+        <div role="status" className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3 text-sm">
+          <p>The agent is set up on networks where this wallet is an owner of the Safe. To use chat, connect a wallet that is an owner of this Safe on each lending network.</p>
+          {onSkip && <Button size="lg" onClick={onSkip}>Open Safe overview</Button>}
+          {onBackToSafes && <Button size="lg" variant="outline" onClick={onBackToSafes}>Back to your Safes</Button>}
+        </div>
+      ) : networks.length > 0 ? (
+        <p role="status" className="rounded-lg bg-muted/50 p-3 text-sm">Only networks where this wallet is an owner of this Safe and the Safe is deployed are listed. To use chat, connect a wallet that is an owner of this Safe on each lending network.</p>
+      ) : null)}
       {!done && agentAddress && networks.length > 0 && (
         <div className="flex flex-col gap-1.5 rounded-lg bg-muted/50 p-3 text-sm">
           <span className="font-medium">What you will sign</span>
@@ -59,10 +76,12 @@ export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networ
       )}
       <CanCannot can={AGENT_CAN} cannot={AGENT_CANNOT} />
       <p className="text-xs text-muted-foreground">It approves a permission, not a payment. You can remove it anytime in Settings.</p>
-      {done && onOpenChat && <Button size="lg" onClick={onOpenChat}>Open chat</Button>}
+      {done && canChat && onOpenChat && <Button size="lg" onClick={onOpenChat}>Open chat</Button>}
       {!done && networks.length === 0 && (
         <div className="flex flex-col gap-2">
-          {otherNetworks.length > 0 ? (
+          {!canChat && !ownsEligibleNetwork ? (
+            <p className="text-sm">This wallet is not an owner of this Safe on a deployed Base or Arbitrum network. Switch to a wallet that is, or choose another Safe.</p>
+          ) : otherNetworks.length > 0 ? (
             <p className="flex flex-wrap items-center gap-1 text-sm">Your Safe is set up on {otherNetworks.map((network, i) => <span key={`${network}-${i}`} className="inline-flex items-center gap-1">{i > 0 && "and"}<NetworkChip id={network} className="px-1.5 py-0" /></span>)}. Loans and the agent work on Base and Arbitrum; add one of those networks to use them.</p>
           ) : (
             <p className="text-sm">This Safe is not set up on a network we support yet, so the agent cannot be added.</p>
@@ -81,7 +100,7 @@ export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networ
           <Button size="lg" disabled={busy} onClick={onAdd}>
             {busy ? <><Spinner /> Waiting for your wallet</> : error ? "Try again" : "Add Lender agent"}
           </Button>
-          {!busy && onSkip && <Button size="lg" variant="ghost" onClick={onSkip}>Skip, add later in Settings</Button>}
+          {!busy && onSkip && <Button size="lg" variant="ghost" onClick={onSkip}>{canChat ? "Skip, add later in Settings" : "Open Safe overview"}</Button>}
         </div>
       )}
     </div>

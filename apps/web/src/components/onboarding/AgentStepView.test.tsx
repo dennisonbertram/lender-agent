@@ -7,22 +7,27 @@ import { AgentStepView } from "./AgentStepView";
 const A = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0001";
 const replace = vi.fn();
 const push = vi.fn();
+const addAgent = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push }) }));
 
 let status: Record<string, unknown>;
 let safes: { address: string; name: string }[];
+const WALLET = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+vi.mock("@/client/auth/useSession", () => ({ useSession: () => ({ session: { address: WALLET }, loading: false }) }));
 vi.mock("@/client/agent", () => ({
-  chainName: () => "Base",
+  chainName: (id: number) => id === 8453 ? "Base" : id === 42161 ? "Arbitrum" : `Network ${id}`,
   useAgentStatus: () => status,
   useAddNetwork: () => ({ addNetwork: vi.fn(), adding: false, error: null, reset: vi.fn() }),
-  useAddAgent: () => ({ add: vi.fn(), adding: false, progress: null, error: null, reset: vi.fn() }),
+  useAddAgent: () => ({ add: (...args: unknown[]) => addAgent(...args), adding: false, progress: null, error: null, reset: vi.fn() }),
 }));
 vi.mock("@/client/safes", async (orig) => ({ ...(await orig<typeof import("@/client/safes")>()), useSafes: () => ({ data: safes }), useAddSafe: () => ({ mutate: vi.fn(), error: null }) }));
 
-const on = { active: true, networks: [{ chainId: 8453, deployed: true, added: true }] };
+const on = { active: true, canChat: true, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: true }] };
 beforeEach(() => {
+  localStorage.clear();
   replace.mockClear();
   push.mockClear();
+  addAgent.mockReset().mockResolvedValue(on);
   safes = [];
   status = { isPending: false, isFetchedAfterMount: true, data: on, error: null };
 });
@@ -79,5 +84,56 @@ describe("AgentStepView", () => {
     status = { ...status, data: { active: false, networks: [{ chainId: 8453, deployed: true, added: false }] } };
     render(<AgentStepView safeAddress={A} />);
     expect(screen.getByText("Family Safe")).toBeTruthy();
+  });
+  it("shows this wallet's local nickname on the agent permission screen", async () => {
+    safes = [{ address: A.toLowerCase(), name: "Family Safe" }];
+    status = { ...status, data: { active: false, networks: [{ chainId: 8453, deployed: true, added: false }] } };
+    localStorage.setItem(`la:safeNickname:${WALLET.toLowerCase()}:${A.toLowerCase()}`, JSON.stringify("Holiday house"));
+    render(<AgentStepView safeAddress={A} />);
+    expect(await screen.findByText("Holiday house")).toBeTruthy();
+    expect(screen.queryByText("Family Safe")).toBeNull();
+  });
+  it("lists and adds only owned, deployed networks still missing the agent", () => {
+    status = { ...status, data: { active: false, canChat: false, eligibleChainIds: [8453], networks: [
+      { chainId: 8453, deployed: true, added: false },
+      { chainId: 42161, deployed: true, added: false },
+    ] } };
+    render(<AgentStepView safeAddress={A} />);
+    expect(screen.getByText("Base", { exact: true })).toBeTruthy();
+    expect(screen.queryByText(/Arbitrum/)).toBeNull();
+  });
+  it("shows partial completion without redirecting or offering chat", () => {
+    status = { ...status, data: { active: true, canChat: false, eligibleChainIds: [8453], networks: [
+      { chainId: 8453, deployed: true, added: true },
+      { chainId: 42161, deployed: true, added: false },
+    ] } };
+    render(<AgentStepView safeAddress={A} />);
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Lender agent setup is complete for this wallet" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Safe overview" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back to your Safes" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open chat" })).toBeNull();
+  });
+  it("does not route to full-access chat after adding on a partially owned Safe", async () => {
+    status = { ...status, data: { active: false, canChat: false, eligibleChainIds: [8453], networks: [
+      { chainId: 8453, deployed: true, added: false },
+      { chainId: 42161, deployed: true, added: false },
+    ] } };
+    addAgent.mockResolvedValue({ active: true, canChat: false, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: true }] });
+    render(<AgentStepView safeAddress={A} />);
+    await act(async () => { screen.getByRole("button", { name: "Add Lender agent" }).click(); });
+    expect(addAgent).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalledWith(`/s/${A}/chat`);
+  });
+  it("skip opens the authorized Safe overview for a partial owner", () => {
+    status = { ...status, data: { active: false, canChat: false, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: false }] } };
+    render(<AgentStepView safeAddress={A} />);
+    screen.getByRole("button", { name: "Open Safe overview" }).click();
+    expect(push).toHaveBeenCalledWith(`/s/${A}`);
+  });
+  it("keeps a separate link back to the Safe picker for a partial owner", () => {
+    status = { ...status, data: { active: false, canChat: false, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: false }] } };
+    render(<AgentStepView safeAddress={A} />);
+    expect(screen.getByRole("link", { name: "Back to your Safes" }).getAttribute("href")).toBe("/onboarding");
   });
 });

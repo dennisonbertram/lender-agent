@@ -43,8 +43,19 @@ describe("findOwnedSafes", () => {
   it("merges one Safe on Base and Arbitrum into one row and sums the balance across both", async () => {
     const found = await findOwnedSafes(services({}, [8453, 42161]), ME, { ens: async () => new Map() });
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ chainIds: [8453, 42161], balanceUsd: 9000 });
+    expect(found[0]).toMatchObject({ chainIds: [8453, 42161], balanceChainIds: [8453, 42161], balanceUsd: 9000 });
     expect(found[0].assets).toEqual([{ symbol: "ETH", amount: 4 }, { symbol: "USDC", amount: 1000 }]);
+  });
+  it("retains the verified approvals and signers separately for each network", async () => {
+    const svc = services({
+      readSafeOwners: async (chainId: number) => chainId === 8453 ? [ME] : [ME, CO],
+      readSafeThreshold: async (chainId: number) => chainId === 8453 ? 1 : 2,
+    }, [8453, 42161]);
+    const [safe] = await findOwnedSafes(svc, ME, { ens: async () => new Map() });
+    expect(safe.networkDetails).toEqual([
+      { chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: ME }] },
+      { chainId: 42161, threshold: 2, ownerCount: 2, owners: [{ address: ME }, { address: CO }] },
+    ]);
   });
   it("never asks a network the app does not serve", async () => {
     const asked: number[] = [];

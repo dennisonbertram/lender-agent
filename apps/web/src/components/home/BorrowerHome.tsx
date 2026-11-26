@@ -41,7 +41,7 @@ export function BorrowerHome() {
         <section className={styles.hero} aria-labelledby="hero-title">
           <div className={styles.heroCopy}>
             <h1 id="hero-title">Borrow against<br /><em>your crypto.</em></h1>
-            <p className={styles.intro}>Receive digital dollars (USDC) in your Safe wallet, a shared crypto wallet whose owners approve transactions. See the estimated interest and when collateral may be sold before you approve. Moving dollars to a bank is a separate step.</p>
+            <p className={styles.intro}>Borrow digital dollars (USDC) in your Safe, a wallet whose owners approve transactions. Before you approve, see the estimated interest and when your collateral could be sold. Moving money to a bank is a separate step.</p>
             <SignInCard presentation="hero" className={styles.signIn} id="get-started" />
           </div>
           <figure className={styles.heroArt}>

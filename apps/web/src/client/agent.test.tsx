@@ -15,6 +15,8 @@ const status = (added: boolean) => ({
   networks: [{ chainId: 42161, deployed: true, added }],
   active: added,
   otherChainIds: [],
+  eligibleChainIds: [42161],
+  canChat: true,
 });
 const typedData = {
   chainId: 42161,
@@ -51,6 +53,59 @@ describe("agent role summary invalidation", () => {
     await act(async () => { await result.current.add(42161); });
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["safes", "summary", signedSafe.toLowerCase()] });
+  });
+
+  it("only signs and adds owned eligible networks for a partially owning wallet", async () => {
+    const { fetchMock, wrapper } = setup();
+    const partial = {
+      ...status(false),
+      networks: [
+        { chainId: 8453, deployed: true, added: false },
+        { chainId: 42161, deployed: true, added: false },
+      ],
+      eligibleChainIds: [8453],
+      canChat: false,
+    };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/agent/typed-data")) return new Response(JSON.stringify({ ...typedData, chainId: 8453 }));
+      if (url.endsWith("/agent") && init?.method === "POST") return new Response(JSON.stringify(partial));
+      if (url.endsWith("/agent")) return new Response(JSON.stringify(partial));
+      return new Response("{}", { status: 404 });
+    });
+    const { result } = renderHook(() => useAddAgent(signedSafe), { wrapper });
+
+    await act(async () => { await result.current.add(); });
+
+    expect(wallet.signTypedDataAsync).toHaveBeenCalledTimes(1);
+    const posts = fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/agent") && init?.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0]?.[1]?.body))).toMatchObject({ chainId: 8453 });
+  });
+
+  it("rejects an explicitly selected unowned network before asking for a signature", async () => {
+    const { fetchMock, wrapper } = setup();
+    const partial = {
+      ...status(false),
+      networks: [
+        { chainId: 8453, deployed: true, added: false },
+        { chainId: 42161, deployed: true, added: false },
+      ],
+      eligibleChainIds: [8453],
+      canChat: false,
+    };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/agent")) return new Response(JSON.stringify(partial));
+      return new Response("{}", { status: 404 });
+    });
+    const { result } = renderHook(() => useAddAgent(signedSafe), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.add(42161)).rejects.toThrow(/not an owner.*Arbitrum.*owns it on Arbitrum/i);
+    });
+
+    expect(wallet.signTypedDataAsync).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/agent") && init?.method === "POST")).toBe(false);
   });
 
   it("refreshes the Safe summary after a confirmed removal", async () => {

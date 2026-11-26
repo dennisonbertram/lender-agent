@@ -24,6 +24,10 @@ export const NOT_OWNER_ERROR = "You are not an owner of this Safe.";
 
 export type FoundSafe = {
   address: Address; threshold: number; ownerCount: number; chainIds: ChainId[];
+  /** Approval and signer data read directly from each verified network. */
+  networkDetails?: { chainId: ChainId; threshold: number; ownerCount: number; owners: { address: Address; ens?: string }[] }[];
+  /** Networks included in the returned total balance. Empty when the total could not be read everywhere. */
+  balanceChainIds?: ChainId[];
   /** Total value in dollars, summed over every served network the Safe is on; absent when any of them could not be read. */
   balanceUsd?: number;
   /** The main assets held, largest first. */
@@ -70,7 +74,8 @@ async function readValue(services: Services, chainId: ChainId, safe: Address) {
 /** Safes the wallet owns, from the Transaction Service, each confirmed on-chain, with balance and owner names when readable. */
 export async function findOwnedSafes(services: Services, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<FoundSafe[]> {
   const ens = deps.ens ?? resolveEnsNames;
-  const found = new Map<string, FoundSafe>();
+  type AggregatedSafe = FoundSafe & Required<Pick<FoundSafe, "networkDetails" | "balanceChainIds">>;
+  const found = new Map<string, AggregatedSafe>();
   // The fork serves Base only; its Safe service throws for any other chain.
   for (const chainId of services.fork ? CHAINS.filter((c) => c === 8453) : CHAINS) {
     const addrs = await services.safeService(chainId).getSafesByOwner(wallet);
@@ -90,9 +95,11 @@ export async function findOwnedSafes(services: Services, wallet: Address, deps: 
       const prev = found.get(c.address.toLowerCase());
       if (prev) {
         prev.chainIds.push(c.chainId);
-        if (prev.balanceUsd === undefined || c.balanceUsd === undefined) { delete prev.balanceUsd; delete prev.assets; }
+        prev.networkDetails.push({ chainId: c.chainId, threshold: c.threshold, ownerCount: c.ownerCount, owners: c.owners });
+        if (prev.balanceUsd === undefined || c.balanceUsd === undefined) { delete prev.balanceUsd; delete prev.assets; prev.balanceChainIds = []; }
         else {
           prev.balanceUsd += c.balanceUsd;
+          prev.balanceChainIds.push(c.chainId);
           const by = new Map<string, number>();
           for (const a of [...(prev.assets ?? []), ...(c.assets ?? [])]) by.set(a.symbol, (by.get(a.symbol) ?? 0) + a.amount);
           prev.assets = [...by].map(([symbol, amount]) => ({ symbol, amount }));
@@ -100,7 +107,8 @@ export async function findOwnedSafes(services: Services, wallet: Address, deps: 
       }
       else {
         const { chainId: id, ...rest } = c;
-        found.set(c.address.toLowerCase(), { ...rest, chainIds: [id] });
+        found.set(c.address.toLowerCase(), { ...rest, chainIds: [id], balanceChainIds: c.balanceUsd === undefined ? [] : [id],
+          networkDetails: [{ chainId: id, threshold: c.threshold, ownerCount: c.ownerCount, owners: c.owners }] });
       }
     }
   }

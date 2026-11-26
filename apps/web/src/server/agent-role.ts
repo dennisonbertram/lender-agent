@@ -17,8 +17,17 @@ export const AGENT_LABEL = "Lender agent";
 export const AGENT_OFF_MESSAGE = "The Lender agent is not on this Safe.";
 
 export type AgentNetworkStatus = { chainId: ChainId; deployed: boolean; added: boolean };
-/** `otherChainIds`: networks the Safe is recorded on that the app does not serve (set up only); never read or given an agent. */
-export type AgentStatus = { agentAddress: Address; networks: AgentNetworkStatus[]; active: boolean; otherChainIds: number[] };
+/** `otherChainIds` are deployed networks from the Safe's setup that the app does not serve. */
+export type AgentStatus = {
+  agentAddress: Address;
+  networks: AgentNetworkStatus[];
+  active: boolean;
+  otherChainIds: number[];
+  /** Deployed served networks where this viewer is an owner. */
+  eligibleChainIds: ChainId[];
+  /** Uses the same all-tracked-networks ownership rule as the chat routes. */
+  canChat: boolean;
+};
 
 const lc = (a: string) => a.toLowerCase();
 
@@ -54,7 +63,14 @@ export async function agentStatus(ctx: SafeContext): Promise<AgentStatus> {
     }
     networks.push({ chainId: row.chainId, deployed: row.deployed, added });
   }
-  return { agentAddress: agent, networks, active: networks.some((n) => n.added), otherChainIds: rows.filter((r) => !SERVED_CHAIN_IDS.includes(r.chainId)).map((r) => r.chainId).sort((a, b) => a - b) };
+  return {
+    agentAddress: agent,
+    networks,
+    active: networks.some((n) => n.added),
+    otherChainIds: rows.filter((r) => r.deployed && !SERVED_CHAIN_IDS.includes(r.chainId)).map((r) => r.chainId).sort((a, b) => a - b),
+    eligibleChainIds: networks.filter((n) => n.deployed && ctx.access.ownedChainIds.includes(n.chainId)).map((n) => n.chainId),
+    canChat: ctx.access.chat,
+  };
 }
 
 function deployedNetwork(ctx: SafeContext, chainId: unknown): ChainId {

@@ -13,12 +13,12 @@ describe("segmentState", () => {
 describe("onboardingBar", () => {
   it("has no bar on Connect", () => expect(onboardingBar({ screen: "connect", path: "create", createStep: 0 })).toBeNull());
   it("create path", () => {
-    expect(onboardingBar({ screen: "safe", path: "create", createStep: 0 })).toEqual({ labels: ["Name", "Approvals", "Review", "Agent"], step: 0, complete: false });
+    expect(onboardingBar({ screen: "safe", path: "create", createStep: 0 })).toEqual({ labels: ["Name Safe", "Set approvals", "Review setup", "Add agent"], step: 0, complete: false });
     expect(onboardingBar({ screen: "safe", path: "create", createStep: 2 })?.step).toBe(2);
     expect(onboardingBar({ screen: "agent", path: "create", createStep: 2 })).toMatchObject({ step: 3, complete: false });
   });
   it("found path", () => {
-    expect(onboardingBar({ screen: "safe", path: "found", createStep: 0 })).toEqual({ labels: ["Safe", "Agent"], step: 0, complete: false });
+    expect(onboardingBar({ screen: "safe", path: "found", createStep: 0 })).toEqual({ labels: ["Choose Safe", "Add agent"], step: 0, complete: false });
     expect(onboardingBar({ screen: "agent", path: "found", createStep: 0 })?.step).toBe(1);
   });
   it("is complete on done", () => {
