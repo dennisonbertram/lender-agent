@@ -58,7 +58,8 @@ export function useAddAgent(address: string) {
     /** `only` limits it to one network (the Settings row); without it, every deployed network that lacks the agent. */
     mutationFn: async (only?: ChainId): Promise<AgentStatus> => {
       let status = await call<AgentStatus>(`/api/safes/${address}/agent`, "GET");
-      const todo = status.networks.filter((n) => n.deployed && !n.added && (only === undefined || n.chainId === only));
+      const eligible = new Set(status.eligibleChainIds);
+      const todo = status.networks.filter((n) => eligible.has(n.chainId) && n.deployed && !n.added && (only === undefined || n.chainId === only));
       try {
         for (const [i, n] of todo.entries()) {
           setProgress({ chainId: n.chainId, network: chainName(n.chainId), n: i + 1, total: todo.length });

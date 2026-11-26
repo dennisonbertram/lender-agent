@@ -62,13 +62,14 @@ afterEach(() => {
 
 describe("onboarding page: a saved Safe whose setup stopped", () => {
   it("offers one setup recovery action instead of a second selectable row for a partly deployed Safe", () => {
-    ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: W1 }] }] }];
+    ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 4500, balanceChainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: W1 }] }] }];
     mineData = [{ ...pendingSafe, verifiedChainIds: [8453, 42161] }];
     render(<OnboardingPage />);
     expect(screen.getAllByText("Holiday")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
     expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
+    expect(screen.getByText("$4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open Safe" }));
@@ -110,6 +111,20 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     render(<OnboardingPage />);
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Optimism");
     expect(screen.getByText("Approval details unavailable on Optimism.")).toBeTruthy();
+  });
+
+  it("does not offer Open Safe when only off-lending ownership is verified and a tracked network is unowned", () => {
+    mineData = [{ ...pendingSafe, ownedChainIds: [], verifiedChainIds: [1], networks: [42161] }];
+    render(<OnboardingPage />);
+    expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open Safe" })).toBeNull();
+  });
+
+  it("keeps a pending-only Safe on the recovery path without an Open Safe action", () => {
+    mineData = [{ ...pendingSafe, ownedChainIds: [], verifiedChainIds: [], networks: [] }];
+    render(<OnboardingPage />);
+    expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open Safe" })).toBeNull();
   });
 
   it("is still offered when the wallet lookup found nothing, and resume re-checks the stored hash instead of paying again", async () => {

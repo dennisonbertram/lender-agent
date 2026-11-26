@@ -12,7 +12,7 @@ import { safeNetworkName } from "@/lib/safe-create";
 import { CHAIN_NAME, type ChainId } from "@/shared/types";
 import { AddSafeForm } from "./AddSafeForm";
 
-export type FoundSafeCard = { address: string; name?: string; threshold: number; ownerCount: number; chainIds: number[];
+export type FoundSafeCard = { address: string; name?: string; threshold: number; ownerCount: number; chainIds: number[]; discoveredChainIds?: number[];
   balanceChainIds?: number[];
   networkDetails?: { chainId: ChainId; threshold: number; ownerCount: number; owners: { address: string; ens?: string }[] }[];
   /** Total value in dollars; absent when it could not be read. */
@@ -22,7 +22,7 @@ export type FoundSafeCard = { address: string; name?: string; threshold: number;
 };
 
 /** A Safe the user saved before, offered again when the wallet lookup found nothing new. `pendingSetup` means its in-app creation is not usable yet; `pendingChainIds` are the recorded networks still not deployed (empty when only indexing is behind). */
-export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[]; discovery?: FoundSafeCard };
+export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[]; openSafeChainIds?: number[]; discovery?: FoundSafeCard };
 
 const SHOWN_OWNERS = 3;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -111,13 +111,14 @@ function hasCompleteBalanceCoverage(safe: FoundSafeCard) {
 }
 
 /** Shows network membership separately from the exact approval/signer snapshot and balance coverage. */
-function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wallet, showApproval = true }: {
+function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wallet, showApproval = true, showBalanceAmount = false }: {
   address: string;
   safe?: FoundSafeCard;
   verifiedChainIds: number[];
   selectedChainId?: number | null;
   wallet?: string;
   showApproval?: boolean;
+  showBalanceAmount?: boolean;
 }) {
   const networkDetails = safe?.networkDetails;
   const detailChainId = resolveDetailsChainId(safe, verifiedChainIds, selectedChainId);
@@ -142,7 +143,13 @@ function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wal
         </span>
       ) : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
       {showApproval && <span className="text-xs text-muted-foreground">{approvalLabel(safe, verifiedChainIds, selectedChainId)}</span>}
-      {hasDistinctBalanceCoverage && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>}
+      {hasDistinctBalanceCoverage && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">
+        {showBalanceAmount
+          ? hasCompleteBalanceCoverage(safe)
+            ? `${usd(safe.balanceUsd)} across ${balanceChainIds.map(chainChipId).join(" and ")}`
+            : `${usd(safe.balanceUsd)} found on ${balanceChainIds.map(chainChipId).join(" and ")}. Other balances are unavailable.`
+          : `Total across ${balanceChainIds.map(chainChipId).join(" and ")}`}
+      </span>}
       <CardDetails address={address} chainId={detailChainId} owners={owners} wallet={wallet} label={detailsLabel} />
     </div>
   );
@@ -285,8 +292,8 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                       : "Setup not finished — the Safe service has not listed it yet. Nothing is paid again."}
                   </span>
                   <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
-                  <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} />
-                  {k.availableChainIds && k.availableChainIds.length > 0 && <Button size="lg" variant="outline" disabled={busy} onClick={() => onPick(k.address)}>
+                  <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} showBalanceAmount />
+                  {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" disabled={busy} onClick={() => onPick(k.address)}>
                     Open Safe
                   </Button>}
                 </>

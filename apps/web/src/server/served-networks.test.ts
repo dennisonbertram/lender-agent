@@ -53,6 +53,17 @@ describe("a Safe created on [1, 8453]", () => {
     expect(asked.every((c) => c === 8453)).toBe(true);
   });
 
+  it("limits agent eligibility to owned deployed networks and excludes a pending off-lending setup", async () => {
+    const ctx = await safeContext(w.req("/", { cookie }), MOCK_SAFE, w.services);
+    await w.db.insert(safeNetworks).values({ safeId: ctx.safe.id, chainId: 42161, deployed: true, agentAdded: false });
+    await w.db.update(safeNetworks).set({ deployed: false }).where(eq(safeNetworks.chainId, 1));
+    ctx.access = { ...ctx.access, ownedChainIds: [8453], trackedChainIds: [8453, 42161], chat: false, ownersDiffer: true };
+
+    const status = await agentStatus(ctx);
+
+    expect(status).toMatchObject({ eligibleChainIds: [8453], canChat: false, otherChainIds: [] });
+  });
+
   it("adding Arbitrum through the networks flow gives an agent step with both served networks", async () => {
     const ctx = await safeContext(w.req("/", { cookie }), MOCK_SAFE, w.services);
     const status = await addSafeNetwork(ctx, 42161);

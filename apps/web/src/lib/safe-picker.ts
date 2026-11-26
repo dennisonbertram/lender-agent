@@ -12,6 +12,7 @@ export function buildSafePickerRows(discovered: FoundSafe[], saved: ListedSafe[]
     const membership = savedSafe?.verifiedChainIds ?? savedSafe?.ownedChainIds ?? [];
     return {
       ...safe,
+      discoveredChainIds: [...safe.chainIds],
       // Balance totals only include the networks discovery read; saved memberships do not add to the total.
       balanceChainIds: safe.balanceChainIds ?? safe.chainIds,
       chainIds: unique([...safe.chainIds, ...membership]),
@@ -25,6 +26,7 @@ export function buildSafePickerRows(discovered: FoundSafe[], saved: ListedSafe[]
       const discovery = foundByAddress.get(address);
       const verified = safe.verifiedChainIds ?? safe.ownedChainIds;
       const available = unique([...verified, ...(discovery?.chainIds ?? [])]);
+      const openSafeChainIds = unique([...(safe.ownedChainIds ?? []), ...(discovery?.discoveredChainIds ?? [])]);
       return {
         address: safe.address,
         name: safe.name,
@@ -32,6 +34,7 @@ export function buildSafePickerRows(discovered: FoundSafe[], saved: ListedSafe[]
         chainIds: safe.pendingSetup ? safe.createdChainIds : available,
         pendingChainIds: safe.createdChainIds.filter((id) => !safe.deployedChainIds.includes(id)),
         availableChainIds: available,
+        openSafeChainIds,
         discovery,
       };
     });
