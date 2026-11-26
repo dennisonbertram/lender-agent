@@ -62,16 +62,16 @@ afterEach(() => {
 
 describe("onboarding page: a saved Safe whose setup stopped", () => {
   it("offers one setup recovery action instead of a second selectable row for a partly deployed Safe", () => {
-    ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453] }];
-    mineData = [pendingSafe];
+    ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: W1 }] }] }];
+    mineData = [{ ...pendingSafe, verifiedChainIds: [8453, 42161] }];
     render(<OnboardingPage />);
     expect(screen.getAllByText("Holiday")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
-    expect(screen.queryByText("Only you approve transactions.")).toBeNull();
-    expect(screen.getByRole("button", { name: "Use on Base" })).toBeTruthy();
+    expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
+    expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Use on Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Safe" }));
     expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
   });
 
@@ -86,6 +86,30 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     fireEvent.click(screen.getByRole("button", { name: "Base" }));
     expect(screen.getByText("Base saved")).toBeTruthy();
     expect(screen.queryByText("Arbitrum saved")).toBeNull();
+  });
+
+  it("merges verified saved memberships with discovery without relabeling balance or approval coverage", () => {
+    ownedData = [{
+      address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 4500,
+      balanceChainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: W1 }] }],
+    }];
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [8453, 42161], verifiedChainIds: [8453, 42161], networks: [8453, 42161] }];
+    render(<OnboardingPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    expect(screen.getByText("Holiday")).toBeTruthy();
+    expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
+    expect(screen.getByText("Total across Base")).toBeTruthy();
+    expect(screen.getByText("Approval details unavailable on Arbitrum.")).toBeTruthy();
+    expect(screen.queryByText(/Approvals on Arbitrum/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Holiday.*Open Safe/ }));
+    expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
+  });
+
+  it("keeps a verified off-lending network in memberships without inventing approval details", () => {
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [], verifiedChainIds: [10], networks: [] }];
+    render(<OnboardingPage />);
+    expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Optimism");
+    expect(screen.getByText("Approval details unavailable on Optimism.")).toBeTruthy();
   });
 
   it("is still offered when the wallet lookup found nothing, and resume re-checks the stored hash instead of paying again", async () => {

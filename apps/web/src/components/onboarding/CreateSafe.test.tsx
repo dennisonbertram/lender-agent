@@ -478,6 +478,16 @@ describe("CreateSafe recovery", () => {
     expect(onCreated).not.toHaveBeenCalled();
   });
 
+  it("shows a local nickname while resuming without changing the saved Safe name", async () => {
+    const api = fakeApi(sponsored, { setup: vi.fn().mockResolvedValue({ status: "pending" }) });
+    render(<CreateSafe wallet={ME} api={api} resume={{ address: ADDR, name: "Holiday", chainIds: [8453] }} resumeDisplayName="Holiday house" onCreated={vi.fn()} pollMs={1} />);
+    expect(screen.getByRole("heading", { name: "Finish setting up Holiday house" })).toBeTruthy();
+    expect(screen.getByText(/Holiday house ·/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Finish setting up" }));
+    await waitFor(() => expect(api.setup).toHaveBeenCalledWith(ADDR, 8453));
+    expect(JSON.parse(localStorage.getItem(createProgressKey(ME, ADDR))!).name).toBe("Holiday");
+  });
+
   it("persists an unknown payment outcome and never offers a second payment after reload", async () => {
     const api = fakeApi(paid, {
       setup: vi.fn().mockResolvedValueOnce(userPays()),

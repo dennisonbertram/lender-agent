@@ -80,7 +80,7 @@ export function requireChat(access: SafeAccess): void {
 }
 
 export type ListedSafe = {
-  id: number; address: Address; name: string; networks: ChainId[]; ownedChainIds: ChainId[]; ownersDiffer: boolean;
+  id: number; address: Address; name: string; networks: ChainId[]; ownedChainIds: ChainId[]; verifiedChainIds?: number[]; ownersDiffer: boolean;
   /** The agent is added on at least one owned network. */
   agent: boolean;
   /** The wallet owns this in-app setup and an originally selected network is undeployed or is not indexed yet. */
@@ -136,7 +136,7 @@ export async function listSafesForWallet(db: Db, access: Access, userId: number,
       const pendingSetup = setupOwner && created.length > 0 && (
         (deployedCreated.length === 0) || (hasVerifiedOwner && created.some((id) => !deployed.includes(id)))
       );
-      if ((pendingSetup || hasVerifiedOwner) && (setupOwner || hasVerifiedOwner)) out.push({ id: s.id, address: s.address as Address, name: s.name, networks, ownedChainIds: [], ownersDiffer: false, agent: false, pendingSetup, createdChainIds: created, recordedChainIds: recorded, deployedChainIds: deployed });
+      if ((pendingSetup || hasVerifiedOwner) && (setupOwner || hasVerifiedOwner)) out.push({ id: s.id, address: s.address as Address, name: s.name, networks, ownedChainIds: [], verifiedChainIds: setupOwnerReads.owned, ownersDiffer: false, agent: false, pendingSetup, createdChainIds: created, recordedChainIds: recorded, deployedChainIds: deployed });
       continue;
     }
     const a = await access.safeAccess(wallet, s.address as Address, networks);
@@ -160,10 +160,10 @@ export async function listSafesForWallet(db: Db, access: Access, userId: number,
     if (a.ownedChainIds.length === 0) {
       // An off-lending Safe stays in the picker only while setup remains unfinished. After any deployment,
       // a live owner read on that deployed setup network must confirm the borrower before offering resume.
-      if (pendingSetup) out.push({ id: s.id, address: s.address as Address, name: s.name, networks: [], ownedChainIds: [], ownersDiffer: false, agent: false, pendingSetup, createdChainIds: created, recordedChainIds: recorded, deployedChainIds: deployed });
+      if (pendingSetup) out.push({ id: s.id, address: s.address as Address, name: s.name, networks: [], ownedChainIds: [], verifiedChainIds: setupOwnerReads.owned, ownersDiffer: false, agent: false, pendingSetup, createdChainIds: created, recordedChainIds: recorded, deployedChainIds: deployed });
       continue;
     }
-    out.push({ id: s.id, address: s.address as Address, name: s.name, networks, ownedChainIds: a.ownedChainIds, ownersDiffer: a.ownersDiffer, agent: rows.some((n) => n.agentAdded && a.ownedChainIds.includes(n.chainId as ChainId)), pendingSetup, createdChainIds: created, recordedChainIds: recorded, deployedChainIds: deployed });
+    out.push({ id: s.id, address: s.address as Address, name: s.name, networks, ownedChainIds: a.ownedChainIds, verifiedChainIds: [...new Set([...a.ownedChainIds, ...setupOwnerReads.owned])], ownersDiffer: a.ownersDiffer, agent: rows.some((n) => n.agentAdded && a.ownedChainIds.includes(n.chainId as ChainId)), pendingSetup, createdChainIds: created, recordedChainIds: recorded, deployedChainIds: deployed });
   }
   return out;
 }

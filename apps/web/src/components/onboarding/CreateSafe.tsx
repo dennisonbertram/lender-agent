@@ -51,7 +51,7 @@ type Phase = "form" | "sign" | "setup" | "pay" | "indexing" | "pending";
  * Setup on the first network is paid by us only while the sponsorship budget lasts; otherwise Review and the setup step state the fee.
  * `resume` continues a Safe that was already created but never finished deploying: it re-checks what was paid instead of paying again.
  */
-export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false, onProgress, pollMs = 1500, indexWaitMs = 60_000, resume }: {
+export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false, onProgress, pollMs = 1500, indexWaitMs = 60_000, resume, resumeDisplayName }: {
   wallet: string;
   api: CreateSafeApi;
   onCreated: (safe: { address: string; name: string; chainIds: number[] }) => void;
@@ -64,6 +64,8 @@ export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false,
   indexWaitMs?: number;
   /** A saved Safe whose setup stopped partway. */
   resume?: { address: string; name?: string; chainIds: number[] };
+  /** Display-only local nickname; setup and persistence keep `resume.name` canonical. */
+  resumeDisplayName?: string;
 }) {
   const [resumeInfo] = useState(resume ?? null);
   const [step, setStep] = useState(0);
@@ -106,6 +108,7 @@ export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false,
   const draft: Draft = { name: name.trim(), cosigners: team ? cosigners.map((c) => c.trim()) : [], threshold: sigs, networks: usable };
   /** The name on the record and in every status line: the draft's, or the saved Safe's while resuming. */
   const displayName = resumeInfo?.name?.trim() || name.trim();
+  const visibleName = resumeInfo ? resumeDisplayName?.trim() || displayName : displayName;
 
   useEffect(() => { if (step === 0) nameRef.current?.select(); }, [step]);
   useEffect(() => { onProgress?.({ step: resumeInfo ? 2 : step, busy: phase !== "form" }); }, [step, phase, resumeInfo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -314,9 +317,9 @@ export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false,
 
       {resumeInfo && phase === "form" && (
         <>
-          {heading(`Finish setting up ${displayName}`)}
+          {heading(`Finish setting up ${visibleName}`)}
           <p className="text-sm">Your Safe was created but its setup stopped partway. Continue where it stopped — what is already paid is checked, not paid again.</p>
-          <p className="text-xs text-muted-foreground" title={resumeInfo.address}>{displayName} · {shortAddress(resumeInfo.address)}</p>
+          <p className="text-xs text-muted-foreground" title={resumeInfo.address}>{visibleName} · {shortAddress(resumeInfo.address)}</p>
         </>
       )}
 
@@ -437,7 +440,7 @@ export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false,
         <div className="flex flex-col gap-2">
           {heading("Not listed yet")}
           <p role="status" className="text-sm">Safe has not listed your new Safe yet — it is still catching up. What you set up is saved; nothing is paid again.</p>
-          <p className="text-xs text-muted-foreground" title={created ?? undefined}>{displayName} · {created ? shortAddress(created) : ""}</p>
+          <p className="text-xs text-muted-foreground" title={created ?? undefined}>{visibleName} · {created ? shortAddress(created) : ""}</p>
           <Button size="lg" type="submit" disabled={running}>Check again</Button>
           {onCancel && <Button type="button" variant="ghost" onClick={leave}>Leave and finish later</Button>}
         </div>
@@ -455,8 +458,8 @@ export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false,
       ) : busy ? (
         <div className="flex flex-col gap-2">
           <p role="status" className="flex items-center gap-2 text-sm"><Spinner /> {
-            phase === "sign" ? `Confirm in your wallet to create ${displayName}. This sets up the Safe; it does not move money.`
-              : phase === "setup" ? `Setting up ${displayName}…`
+            phase === "sign" ? `Confirm in your wallet to create ${visibleName}. This sets up the Safe; it does not move money.`
+              : phase === "setup" ? `Setting up ${visibleName}…`
               : "Waiting for Safe to recognise your new Safe…"}
           </p>
           {created && onCancel && <Button type="button" variant="ghost" onClick={leave}>Leave and finish later</Button>}

@@ -12,7 +12,9 @@ import { safeNetworkName } from "@/lib/safe-create";
 import { CHAIN_NAME, type ChainId } from "@/shared/types";
 import { AddSafeForm } from "./AddSafeForm";
 
-export type FoundSafeCard = { address: string; name?: string; threshold: number; ownerCount: number; chainIds: ChainId[];
+export type FoundSafeCard = { address: string; name?: string; threshold: number; ownerCount: number; chainIds: number[];
+  balanceChainIds?: number[];
+  networkDetails?: { chainId: ChainId; threshold: number; ownerCount: number; owners: { address: string; ens?: string }[] }[];
   /** Total value in dollars; absent when it could not be read. */
   balanceUsd?: number;
   assets?: { symbol: string; amount: number }[];
@@ -20,7 +22,7 @@ export type FoundSafeCard = { address: string; name?: string; threshold: number;
 };
 
 /** A Safe the user saved before, offered again when the wallet lookup found nothing new. `pendingSetup` means its in-app creation is not usable yet; `pendingChainIds` are the recorded networks still not deployed (empty when only indexing is behind). */
-export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[] };
+export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[]; discovery?: FoundSafeCard };
 
 const SHOWN_OWNERS = 3;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -66,12 +68,12 @@ const chainChipId = (c: number) => {
 };
 
 /** The account's technical identities — its address and its signers — grouped behind one toggle; copy, explorer and verify stay on demand. */
-function CardDetails({ address, chainId, owners, wallet }: { address: string; chainId?: number; owners?: { address: string; ens?: string }[]; wallet?: string }) {
+function CardDetails({ address, chainId, owners, wallet, label = "Address and signers" }: { address: string; chainId?: number; owners?: { address: string; ens?: string }[]; wallet?: string; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="flex flex-col gap-1 text-xs">
       <button type="button" aria-expanded={open} className="w-fit text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={() => setOpen((v) => !v)}>
-        Address and signers
+        {label}
       </button>
       {open && (
         <span className="flex flex-col gap-1">
@@ -80,6 +82,69 @@ function CardDetails({ address, chainId, owners, wallet }: { address: string; ch
         </span>
       )}
     </span>
+  );
+}
+
+function approvalLabel(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
+  const networkDetails = safe?.networkDetails;
+  const chainId = resolveDetailsChainId(safe, verifiedChainIds, selectedChainId);
+  const snapshot = chainId === undefined ? undefined : networkDetails?.find((network) => network.chainId === chainId);
+  const legacyFirst = safe && (!networkDetails || networkDetails.length === 0) && chainId === safe.chainIds[0] ? safe : undefined;
+  const threshold = snapshot?.threshold ?? legacyFirst?.threshold;
+  const ownerCount = snapshot?.ownerCount ?? legacyFirst?.ownerCount;
+  const name = chainId === undefined ? undefined : chainChipId(chainId);
+  if (threshold === undefined || ownerCount === undefined) return `Approval details unavailable${name ? ` on ${name}` : " until a network is verified"}.`;
+  const summary = ownerCount === 1 ? approvalsSummary(1, 1) : `${threshold} of ${ownerCount} owners must approve each transaction`;
+  return verifiedChainIds.length > 1 ? `Approvals on ${name ?? "the selected network"}: ${summary}` : summary;
+}
+
+function resolveDetailsChainId(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
+  if (selectedChainId !== null && selectedChainId !== undefined && verifiedChainIds.includes(selectedChainId)) return selectedChainId;
+  return safe?.networkDetails?.find((network) => verifiedChainIds.includes(network.chainId))?.chainId
+    ?? (safe?.chainIds.find((id) => verifiedChainIds.includes(id)))
+    ?? verifiedChainIds[0];
+}
+
+function hasCompleteBalanceCoverage(safe: FoundSafeCard) {
+  const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
+  return safe.chainIds.every((id) => balanceChainIds.includes(id));
+}
+
+/** Shows network membership separately from the exact approval/signer snapshot and balance coverage. */
+function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wallet, showApproval = true }: {
+  address: string;
+  safe?: FoundSafeCard;
+  verifiedChainIds: number[];
+  selectedChainId?: number | null;
+  wallet?: string;
+  showApproval?: boolean;
+}) {
+  const networkDetails = safe?.networkDetails;
+  const detailChainId = resolveDetailsChainId(safe, verifiedChainIds, selectedChainId);
+  const snapshot = detailChainId === undefined ? undefined : networkDetails?.find((network) => network.chainId === detailChainId);
+  // Older single-network responses can use their original fields. For multi-network responses, those fields only
+  // describe the first discovery network and are never used as a different network's approval policy.
+  const legacyFirst = safe && (!networkDetails || networkDetails.length === 0) && detailChainId === safe.chainIds[0] ? safe : undefined;
+  const owners = snapshot?.owners ?? legacyFirst?.owners;
+  const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
+  const oneNetwork = verifiedChainIds.length <= 1;
+  const balanceChainIds = safe ? safe.balanceChainIds ?? safe.chainIds : [];
+  const hasDistinctBalanceCoverage = safe && verifiedChainIds.length > 1;
+  const filterDoesNotMatch = selectedChainId !== null && selectedChainId !== undefined && !verifiedChainIds.includes(selectedChainId);
+  const detailsLabel = !name ? "Address" : !oneNetwork || filterDoesNotMatch
+    ? owners ? `Address and signers on ${name}` : `Address on ${name}`
+    : "Address and signers";
+  return (
+    <div className="flex flex-col gap-1.5">
+      {verifiedChainIds.length > 0 ? (
+        <span className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+          <span>Verified ownership on{" "}</span>{verifiedChainIds.map((id, index) => <span key={id} className="inline-flex items-center gap-1">{index > 0 && " and "}<NetworkChip id={chainChipId(id)} className="px-1.5 py-0" /></span>)}
+        </span>
+      ) : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
+      {showApproval && <span className="text-xs text-muted-foreground">{approvalLabel(safe, verifiedChainIds, selectedChainId)}</span>}
+      {hasDistinctBalanceCoverage && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>}
+      <CardDetails address={address} chainId={detailChainId} owners={owners} wallet={wallet} label={detailsLabel} />
+    </div>
   );
 }
 
@@ -122,9 +187,12 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
   const empty = none && !lookupFailed && !savedBusy && !savedFailed && (known?.length ?? 0) === 0;
   // Funded Safes first; the rest keep their order.
   const sorted = [...found].sort((x, y) => Number((y.balanceUsd ?? 0) > 0) - Number((x.balanceUsd ?? 0) > 0));
-  const networks = [...new Set([...found.flatMap((safe) => safe.chainIds), ...(known ?? []).flatMap((safe) => safe.chainIds ?? [])])];
+  const networks = [...new Set([
+    ...found.flatMap((safe) => safe.chainIds),
+    ...(known ?? []).flatMap((safe) => safe.pendingSetup ? safe.availableChainIds ?? [] : safe.chainIds ?? []),
+  ])];
   const pendingAddresses = new Set((known ?? []).filter((safe) => safe.pendingSetup).map((safe) => safe.address.toLowerCase()));
-  const visibleFound = sorted.filter((safe) => !pendingAddresses.has(safe.address.toLowerCase()) && (networkFilter === null || safe.chainIds.includes(networkFilter as ChainId)));
+  const visibleFound = sorted.filter((safe) => !pendingAddresses.has(safe.address.toLowerCase()) && (networkFilter === null || safe.chainIds.includes(networkFilter)));
   const foundAddresses = new Set(found.map((safe) => safe.address.toLowerCase()));
   const visibleKnown = (known ?? []).filter((safe) => safe.pendingSetup || !foundAddresses.has(safe.address.toLowerCase()))
     .filter((safe) => safe.pendingSetup || networkFilter === null || !!safe.chainIds?.includes(networkFilter));
@@ -176,25 +244,25 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                 onClick={() => onPick(s.address)}
                 className="flex w-full flex-col gap-1.5 rounded-lg text-left focus-visible:outline-2 focus-visible:outline-ring"
               >
-                <span className="text-sm font-medium">{s.name || (s.balanceUsd ? `${usd(s.balanceUsd)} Safe` : "Safe")}</span>
+                <span className="text-sm font-medium">{s.name || (s.balanceUsd && hasCompleteBalanceCoverage(s) ? `${usd(s.balanceUsd)} Safe` : "Safe")}</span>
                 {s.balanceUsd !== undefined && (
-                  s.balanceUsd === 0 ? (
+                  !hasCompleteBalanceCoverage(s) ? (
+                    <span className="text-sm text-muted-foreground">
+                      {usd(s.balanceUsd)} found on {s.balanceChainIds?.length ? s.balanceChainIds.map(chainChipId).join(" and ") : "the reported networks"}. Other balances are unavailable.
+                    </span>
+                  ) : s.balanceUsd === 0 ? (
                     <span className="text-sm text-warning-text">Empty. Add funds before borrowing.</span>
                   ) : (
                     <span className="text-sm">
                       {s.name && <span className="font-medium">{usd(s.balanceUsd)}</span>}
-                      {s.chainIds.length > 1 && <span className="text-xs text-muted-foreground"> across {s.chainIds.length} networks</span>}
                       {s.assets && s.assets.length > 0 && <> <span className="text-xs text-muted-foreground">{s.assets.map((a) => `${amountText(a.amount)} ${a.symbol}`).join(" · ")}</span></>}
                     </span>
                   )
                 )}
-                <span className="text-xs text-muted-foreground">{s.ownerCount === 1 ? approvalsSummary(1, 1) : `${s.threshold} of ${s.ownerCount} owners must approve each transaction`}</span>
-                {s.chainIds.length > 0
-                  ? <span className="flex flex-wrap gap-1">{s.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
-                  : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
-                <span className="flex items-center gap-1 text-xs font-medium">Use this Safe <ChevronRight aria-hidden className="size-3.5" /></span>
+                <span className="text-xs text-muted-foreground">{approvalLabel(s, s.chainIds, networkFilter)}</span>
+                <span className="flex items-center gap-1 text-xs font-medium">Open Safe <ChevronRight aria-hidden className="size-3.5" /></span>
               </button>
-              <CardDetails address={s.address} chainId={s.chainIds[0]} owners={s.owners} wallet={wallet} />
+              <SafeNetworkInfo address={s.address} safe={s} verifiedChainIds={s.chainIds} selectedChainId={networkFilter} wallet={wallet} showApproval={false} />
             </li>
           ))}
         </ul>
@@ -210,18 +278,16 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                 return (
                 <>
                   <span className="text-sm font-medium">{k.name || "Safe"}</span>
-                  {networkFilter !== null && !k.chainIds?.includes(networkFilter) && !k.availableChainIds?.includes(networkFilter) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
+                  {networkFilter !== null && !k.availableChainIds?.includes(networkFilter) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
                   <span className="text-xs text-muted-foreground">
                     {pending.length > 0
                       ? <>Setup not finished{done.length > 0 && <> — done on {done.map(chainChipId).join(", ")}</>} — finish on {pending.map(chainChipId).join(", ")}. Nothing is paid again.</>
                       : "Setup not finished — the Safe service has not listed it yet. Nothing is paid again."}
                   </span>
-                  {k.chainIds && k.chainIds.length > 0 ? (
-                    <span className="flex flex-wrap gap-1">{k.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
-                  ) : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
                   <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
+                  <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} />
                   {k.availableChainIds && k.availableChainIds.length > 0 && <Button size="lg" variant="outline" disabled={busy} onClick={() => onPick(k.address)}>
-                    Use on {k.availableChainIds.map(chainChipId).join(" and ")}
+                    Open Safe
                   </Button>}
                 </>
                 );
@@ -234,13 +300,10 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                 >
                   <span className="text-sm font-medium">{k.name || "Safe"}</span>
                   <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
-                  {k.chainIds && k.chainIds.length > 0 ? (
-                    <span className="flex flex-wrap gap-1">{k.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
-                  ) : <span className="text-xs text-muted-foreground">Network unavailable; your wallet will be checked when you open it.</span>}
-                  <span className="flex items-center gap-1 text-xs font-medium">Use this Safe <ChevronRight aria-hidden className="size-3.5" /></span>
+                  <span className="flex items-center gap-1 text-xs font-medium">Open Safe <ChevronRight aria-hidden className="size-3.5" /></span>
                 </button>
               )}
-              <CardDetails address={k.address} chainId={k.chainIds?.[0]} />
+              {!k.pendingSetup && <SafeNetworkInfo address={k.address} verifiedChainIds={k.availableChainIds ?? k.chainIds ?? []} selectedChainId={networkFilter} wallet={wallet} />}
             </li>
           ))}
         </ul>

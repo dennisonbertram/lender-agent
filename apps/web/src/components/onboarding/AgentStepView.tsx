@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "@/client/auth/useSession";
 import { chainName, useAddAgent, useAddNetwork, useAgentStatus } from "@/client/agent";
 import { ApiError, useAddSafe, useSafes } from "@/client/safes";
 import { safeNetworkName } from "@/lib/safe-create";
@@ -8,20 +9,23 @@ import { AddressText } from "@/components/ui/address";
 import { StateMessage } from "@/components/ui/state-message";
 import { AgentStep } from "./AgentStep";
 import { OnboardingCard } from "./OnboardingCard";
+import { useSafeNicknameNames } from "./useSafeNicknameNames";
 
 /** Wires the agent step to the server: signatures, read-back, then on to the chat. */
 export function AgentStepView({ safeAddress, createPath }: { safeAddress: string; createPath?: boolean }) {
   const router = useRouter();
   const status = useAgentStatus(safeAddress);
+  const { session } = useSession();
   const add = useAddAgent(safeAddress);
   const addNet = useAddNetwork(safeAddress);
   const safes = useSafes();
+  const nicknameNames = useSafeNicknameNames(session?.address, [safeAddress]);
   const addSafe = useAddSafe();
   const addStarted = useRef(false);
   const redirected = useRef(false);
   const deployed = status.data?.networks.filter((n) => n.deployed) ?? [];
   const done = !!status.data?.active && !add.adding && deployed.every((n) => n.added);
-  const safeName = safes.data?.find((s) => s.address.toLowerCase() === safeAddress.toLowerCase())?.name || undefined;
+  const safeName = nicknameNames[safeAddress.toLowerCase()] ?? safes.data?.find((s) => s.address.toLowerCase() === safeAddress.toLowerCase())?.name ?? undefined;
 
   // Already on: skip a step with nothing left to do. Only from a read made after this page mounted, never from the cache
   // (Remove agent, then "Add agent to this Safe", lands here with a stale "on").

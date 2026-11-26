@@ -170,7 +170,7 @@ export function StepBar({ labels, step, complete = false }: { labels: string[]; 
         return (
           <div key={l} className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className={cn("h-1.5 rounded-full", state === "done" ? "bg-success/70" : state === "current" ? "bg-primary" : "bg-border")} />
-            <span aria-current={state === "current" ? "step" : undefined} className={cn("flex min-h-8 min-w-0 items-start gap-1 rounded-md px-1 py-1 text-[11px] leading-tight", state === "done" ? "font-medium text-success-text" : state === "current" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground")}>
+            <span aria-current={state === "current" ? "step" : undefined} className={cn("flex min-h-8 min-w-0 items-start gap-1 rounded-md px-1 py-1 text-xs leading-tight", state === "done" ? "font-medium text-success-text" : state === "current" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground")}>
               {state === "done" ? <><Check className="mt-px size-3 shrink-0" aria-hidden />{l}</> : `${i + 1} ${l}`}
             </span>
           </div>

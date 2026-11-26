@@ -12,7 +12,8 @@ import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { SafeStep } from "@/components/onboarding/SafeStep";
 import { shortAddress } from "@/lib/address";
 import { onboardingBar } from "@/lib/step-bar";
-import { readSafeNickname, safeNicknameStoragePrefix } from "@/components/shell/ShellContext";
+import { buildSafePickerRows } from "@/lib/safe-picker";
+import { useSafeNicknameNames } from "@/components/onboarding/useSafeNicknameNames";
 
 function Onboarding() {
   const { session, loading } = useSession();
@@ -25,26 +26,7 @@ function Onboarding() {
   const [creating, setCreating] = useState(false);
   const [createStep, setCreateStep] = useState(0);
   const [resume, setResume] = useState<{ address: string; name?: string; chainIds: number[] } | null>(null);
-  const [nicknameState, setNicknameState] = useState<{ wallet: string; names: Record<string, string> }>();
-  const walletKey = session?.address.toLowerCase();
-  useEffect(() => {
-    if (!session?.address) { setNicknameState(undefined); return; }
-    const wallet = session.address;
-    const load = () => {
-      const addresses = new Set([...(mine.data ?? []).map((s) => s.address), ...(owned.data ?? []).map((s) => s.address)]);
-      const names: Record<string, string> = {};
-      for (const address of addresses) {
-        const name = readSafeNickname(wallet, address);
-        if (name) names[address.toLowerCase()] = name;
-      }
-      setNicknameState({ wallet: wallet.toLowerCase(), names });
-    };
-    load();
-    const prefix = safeNicknameStoragePrefix(wallet);
-    const onStorage = (event: StorageEvent) => { if (event.key === null || event.key.startsWith(prefix)) load(); };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [session?.address, mine.data, owned.data]);
+  const nicknameNames = useSafeNicknameNames(session?.address, [...(mine.data ?? []).map((s) => s.address), ...(owned.data ?? []).map((s) => s.address)]);
   useEffect(() => {
     if (!loading && !session) router.replace("/");
   }, [loading, session, router]);
@@ -53,20 +35,17 @@ function Onboarding() {
   const bar = onboardingBar({ screen: "safe", path: creating ? "create" : "found", createStep });
   const mineList = mine.data ?? [];
   const names = new Map(mineList.map((s) => [s.address.toLowerCase(), s.name]));
-  const displayName = (address: string, fallback?: string) => nicknameState && walletKey && nicknameState.wallet === walletKey ? (nicknameState.names[address.toLowerCase()] ?? fallback) : fallback;
+  const displayName = (address: string, fallback?: string) => nicknameNames[address.toLowerCase()] ?? fallback;
   const go = (address: string, agent: boolean) => router.push(agent ? `/s/${address}/chat` : `/onboarding/agent?safe=${address}`);
   const save = (v: { address: string; name?: string }) => add.mutate(v, { onSuccess: (r) => go(r.address, r.agent) });
   // A Safe already in the list is not saved again: go on to its agent step.
   const pick = (address: string) => (names.has(address.toLowerCase()) ? go(address, false) : save({ address }));
   // The Safes saved earlier that the wallet lookup did not also find — plus every unfinished in-app setup, which shows as
   // a resumable record (not a plain card) even when the lookup also found it on a finished network.
-  const foundAddrs = new Set((owned.data ?? []).map((s) => s.address.toLowerCase()));
-  const foundByAddress = new Map((owned.data ?? []).map((s) => [s.address.toLowerCase(), s]));
-  const known = mineList
-    .filter((s) => s.pendingSetup || !foundAddrs.has(s.address.toLowerCase()))
-    .map((s) => ({ address: s.address, name: displayName(s.address, s.name), pendingSetup: s.pendingSetup, chainIds: s.pendingSetup ? s.createdChainIds : s.ownedChainIds,
-      availableChainIds: s.pendingSetup ? foundByAddress.get(s.address.toLowerCase())?.chainIds : undefined,
-      pendingChainIds: s.createdChainIds.filter((c) => !s.deployedChainIds.includes(c)) }));
+  const pickerRows = buildSafePickerRows(
+    (owned.data ?? []).map((s) => ({ ...s, name: displayName(s.address, names.get(s.address.toLowerCase())) })),
+    mineList.map((s) => ({ ...s, name: displayName(s.address, s.name) })),
+  );
   const openResume = (address: string) => {
     const k = mineList.find((s) => s.address.toLowerCase() === address.toLowerCase());
     setResume({ address, name: k?.name, chainIds: k?.createdChainIds ?? k?.recordedChainIds ?? k?.networks ?? [] });
@@ -83,6 +62,7 @@ function Onboarding() {
             wallet={session.address}
             api={createApi}
             resume={resume ?? undefined}
+            resumeDisplayName={resume ? displayName(resume.address, resume.name) : undefined}
             onProgress={(p) => setCreateStep(p.step)}
             onCancel={leaveCreate}
             onCreated={(safe) => router.push(`/onboarding/agent?safe=${safe.address}&path=create`)}
@@ -92,8 +72,8 @@ function Onboarding() {
           wallet={session.address}
           onCreate={() => { setResume(null); setCreating(true); }}
           onUseAnotherWallet={() => void signOut()}
-          found={(owned.data ?? []).map((s) => ({ ...s, name: displayName(s.address, names.get(s.address.toLowerCase())) }))}
-          known={known}
+          found={pickerRows.found}
+          known={pickerRows.known}
           loading={owned.isLoading}
           lookupFailed={!!owned.error}
           savedLoading={mine.isLoading}

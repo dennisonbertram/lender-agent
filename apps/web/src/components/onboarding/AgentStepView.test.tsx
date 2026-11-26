@@ -11,6 +11,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push }) }));
 
 let status: Record<string, unknown>;
 let safes: { address: string; name: string }[];
+const WALLET = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+vi.mock("@/client/auth/useSession", () => ({ useSession: () => ({ session: { address: WALLET }, loading: false }) }));
 vi.mock("@/client/agent", () => ({
   chainName: () => "Base",
   useAgentStatus: () => status,
@@ -21,6 +23,7 @@ vi.mock("@/client/safes", async (orig) => ({ ...(await orig<typeof import("@/cli
 
 const on = { active: true, networks: [{ chainId: 8453, deployed: true, added: true }] };
 beforeEach(() => {
+  localStorage.clear();
   replace.mockClear();
   push.mockClear();
   safes = [];
@@ -79,5 +82,13 @@ describe("AgentStepView", () => {
     status = { ...status, data: { active: false, networks: [{ chainId: 8453, deployed: true, added: false }] } };
     render(<AgentStepView safeAddress={A} />);
     expect(screen.getByText("Family Safe")).toBeTruthy();
+  });
+  it("shows this wallet's local nickname on the agent permission screen", async () => {
+    safes = [{ address: A.toLowerCase(), name: "Family Safe" }];
+    status = { ...status, data: { active: false, networks: [{ chainId: 8453, deployed: true, added: false }] } };
+    localStorage.setItem(`la:safeNickname:${WALLET.toLowerCase()}:${A.toLowerCase()}`, JSON.stringify("Holiday house"));
+    render(<AgentStepView safeAddress={A} />);
+    expect(await screen.findByText("Holiday house")).toBeTruthy();
+    expect(screen.queryByText("Family Safe")).toBeNull();
   });
 });

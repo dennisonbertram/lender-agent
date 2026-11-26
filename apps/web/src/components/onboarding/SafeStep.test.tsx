@@ -30,7 +30,7 @@ describe("SafeStep", () => {
     expect(screen.getByText("Base Safe")).toBeTruthy();
     expect(screen.getByText("Arbitrum Safe")).toBeTruthy();
     expect(screen.getByText("Unreported Safe")).toBeTruthy();
-    expect(screen.getByText("Network unavailable.")).toBeTruthy();
+    expect(screen.getAllByText("Network unavailable.").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Base" }));
     expect(screen.getByText("Base Safe")).toBeTruthy();
     expect(screen.queryByText("Arbitrum Safe")).toBeNull();
@@ -55,6 +55,48 @@ describe("SafeStep", () => {
     expect(screen.getByText("Shared Safe")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     expect(screen.getByText("Shared Safe")).toBeTruthy();
+  });
+  it("uses a verified recovery network for details when the recovery row is shown outside a filter", () => {
+    const wallet = "0x00000000000000000000000000000000000000a1";
+    render(<SafeStep wallet={wallet} found={[
+      { address: A, name: "Arbitrum Safe", threshold: 2, ownerCount: 2, chainIds: [42161], owners: [{ address: wallet }, { address: "0x00000000000000000000000000000000000000b2" }] },
+    ]} known={[{
+      address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Pending Safe", pendingSetup: true,
+      chainIds: [8453, 100], pendingChainIds: [100], availableChainIds: [8453],
+      discovery: { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Pending Safe", threshold: 1, ownerCount: 1, chainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: wallet }] }] },
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    expect(screen.getByText(/Setup recovery is shown even though this Safe does not match/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Address and signers on Base"));
+    expect(screen.getByRole("link", { name: "View on Basescan" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "View on Arbiscan" })).toBeNull();
+  });
+  it("uses approval, signer and explorer details from the selected network", () => {
+    const wallet = "0x00000000000000000000000000000000000000a1";
+    const coowner = "0x00000000000000000000000000000000000000b2";
+    render(<SafeStep wallet={wallet} found={[{
+      address: A, name: "Shared Safe", threshold: 1, ownerCount: 1, chainIds: [8453, 42161], balanceUsd: 9000,
+      balanceChainIds: [8453, 42161],
+      networkDetails: [
+        { chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: wallet }] },
+        { chainId: 42161, threshold: 2, ownerCount: 2, owners: [{ address: wallet }, { address: coowner }] },
+      ],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
+    expect(screen.getByText("Total across Base and Arbitrum")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    expect(screen.getByText("Approvals on Arbitrum: 2 of 2 owners must approve each transaction")).toBeTruthy();
+    fireEvent.click(screen.getByText("Address and signers on Arbitrum"));
+    expect(screen.getByRole("link", { name: "View on Arbiscan" })).toBeTruthy();
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(screen.queryByText("Only you approve transactions.")).toBeNull();
+  });
+  it("does not call a partially measured zero balance empty", () => {
+    render(<SafeStep found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453, 42161], balanceUsd: 0, balanceChainIds: [8453],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByText("$0 found on Base. Other balances are unavailable.")).toBeTruthy();
+    expect(screen.queryByText("Empty. Add funds before borrowing.")).toBeNull();
   });
   it("replaces a discovered partial setup with its single recovery action and suppresses the saved duplicate", () => {
     render(<SafeStep found={[{ address: A, name: "Holiday", threshold: 2, ownerCount: 3, chainIds: [8453, 42161] }]} known={[
