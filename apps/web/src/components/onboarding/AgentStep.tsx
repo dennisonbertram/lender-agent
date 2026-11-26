@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { AddressText } from "@/components/ui/address";
 import type { SigningProgress } from "@/client/agent";
+import { onboardingBar } from "@/lib/step-bar";
 
 export const AGENT_CAN = ["See your balances", "Suggest transactions for you to sign"];
 export const AGENT_CANNOT = ["Sign or approve anything", "Move money on its own"];
@@ -36,10 +37,11 @@ export type AgentStepProps = {
 /** The agent step (BP-05, BP-06). No field for a key or a seed phrase, on purpose. */
 export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networks, progress, busy, done, error, onAdd, onSkip, onOpenChat, createPath, otherNetworks = [], onAddBase }: AgentStepProps) {
   const many = networks.length > 1;
+  const bar = onboardingBar({ screen: "agent", path: createPath ? "create" : "found", createStep: 0 });
   return (
     <div className="flex flex-col gap-4">
       {!done && <a href="/onboarding" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">Back to your Safes</a>}
-      <StepBar {...(createPath ? { labels: ["Name", "Approvals", "Review", "Agent"], step: 3 } : { labels: ["Safe", "Agent"], step: 1 })} complete={done} />
+      {bar && <StepBar {...bar} complete={done} />}
       <h1 className="text-lg font-medium outline-none">{done ? "Lender agent can now suggest transactions" : "Let Lender agent suggest transactions"}</h1>
       <div className="flex flex-col gap-1 text-sm">
         <span className="font-medium">{safeName || "Safe"}</span>

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { NetworkChip } from "@/components/common";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ export type FoundSafeCard = { address: string; name?: string; threshold: number;
 };
 
 /** A Safe the user saved before, offered again when the wallet lookup found nothing new. `pendingSetup` means its in-app creation is not usable yet; `pendingChainIds` are the recorded networks still not deployed (empty when only indexing is behind). */
-export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[] };
+export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[] };
 
 const SHOWN_OWNERS = 3;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -114,16 +115,26 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
   onUseAnotherWallet?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [networkFilter, setNetworkFilter] = useState<number | null>(null);
   const none = !loading && found.length === 0;
   const savedBusy = !!savedLoading;
   const savedFailed = !!savedLookupFailed;
   const empty = none && !lookupFailed && !savedBusy && !savedFailed && (known?.length ?? 0) === 0;
   // Funded Safes first; the rest keep their order.
   const sorted = [...found].sort((x, y) => Number((y.balanceUsd ?? 0) > 0) - Number((x.balanceUsd ?? 0) > 0));
+  const networks = [...new Set([...found.flatMap((safe) => safe.chainIds), ...(known ?? []).flatMap((safe) => safe.chainIds ?? [])])];
+  const pendingAddresses = new Set((known ?? []).filter((safe) => safe.pendingSetup).map((safe) => safe.address.toLowerCase()));
+  const visibleFound = sorted.filter((safe) => !pendingAddresses.has(safe.address.toLowerCase()) && (networkFilter === null || safe.chainIds.includes(networkFilter as ChainId)));
+  const foundAddresses = new Set(found.map((safe) => safe.address.toLowerCase()));
+  const visibleKnown = (known ?? []).filter((safe) => safe.pendingSetup || !foundAddresses.has(safe.address.toLowerCase()))
+    .filter((safe) => safe.pendingSetup || networkFilter === null || !!safe.chainIds?.includes(networkFilter));
+  const hasUnknownNetwork = sorted.some((safe) => safe.chainIds.length === 0)
+    || (known ?? []).some((safe) => !safe.pendingSetup && !safe.chainIds?.length && !foundAddresses.has(safe.address.toLowerCase()));
+  const hasPendingSetup = visibleKnown.some((safe) => safe.pendingSetup);
   return (
     <>
-      <h1 tabIndex={-1} className="text-lg font-medium outline-none">{found.length > 0 ? "Choose a Safe" : "Your Safe"}</h1>
-      {found.length > 0 && !adding && <p className="text-xs text-muted-foreground">We found these Safes owned by your wallet.</p>}
+      <h1 tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none">{hasPendingSetup ? "Finish setting up your Safe" : visibleFound.length > 0 ? "Choose a Safe" : "Your Safe"}</h1>
+      {visibleFound.length > 0 && !adding && <p className="text-xs text-muted-foreground">Choose the Safe the Lender agent should work with.</p>}
       {empty && (
         <p className="text-sm">
           {wallet ? <>No Safe found for <AddressText address={wallet} />. </> : "No Safe found for this wallet. "}
@@ -145,8 +156,19 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
       )}
       {loading && <p className="text-xs text-muted-foreground">Looking for your Safes…</p>}
       {!adding && (
+        <>
+        {(networks.length > 1 || networkFilter !== null) && <fieldset className="flex flex-col gap-2">
+          <legend className="text-xs font-medium text-muted-foreground">Show Safes on</legend>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" aria-pressed={networkFilter === null} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === null ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(null)}><NetworkChip id="All networks" className="rounded-none border-0 px-0 py-0 text-current" /></button>
+            {networks.map((network) => <button key={network} type="button" aria-pressed={networkFilter === network} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === network ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(network)}><NetworkChip id={chainChipId(network)} className="rounded-none border-0 px-0 py-0 text-current" /></button>)}
+          </div>
+        </fieldset>}
+        {networkFilter !== null && visibleFound.length === 0 && visibleKnown.length === 0 && <p className="text-sm">{hasUnknownNetwork
+          ? <>No Safes with reported network information found on {chainChipId(networkFilter)}. Choose All networks to review Safes whose network is unavailable.</>
+          : <>No Safes found on {chainChipId(networkFilter)}.</>}</p>}
         <ul className="flex flex-col gap-2">
-          {sorted.map((s) => (
+          {visibleFound.map((s) => (
             <li key={s.address} className="flex flex-col gap-1.5 rounded-xl p-3 ring-1 ring-foreground/10 hover:bg-muted/50">
               <button
                 type="button"
@@ -167,16 +189,20 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                   )
                 )}
                 <span className="text-xs text-muted-foreground">{s.ownerCount === 1 ? approvalsSummary(1, 1) : `${s.threshold} of ${s.ownerCount} owners must approve each transaction`}</span>
-                <span className="flex flex-wrap gap-1">{s.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
+                {s.chainIds.length > 0
+                  ? <span className="flex flex-wrap gap-1">{s.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
+                  : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
+                <span className="flex items-center gap-1 text-xs font-medium">Use this Safe <ChevronRight aria-hidden className="size-3.5" /></span>
               </button>
               <CardDetails address={s.address} chainId={s.chainIds[0]} owners={s.owners} wallet={wallet} />
             </li>
           ))}
         </ul>
+        </>
       )}
-      {!adding && known && known.length > 0 && (
+      {!adding && visibleKnown.length > 0 && (
         <ul aria-label="Saved Safes" className="flex flex-col gap-2">
-          {known.map((k) => (
+          {visibleKnown.map((k) => (
             <li key={k.address} className="flex flex-col gap-1.5 rounded-xl p-3 ring-1 ring-foreground/10 hover:bg-muted/50">
               {k.pendingSetup ? (() => {
                 const pending = k.pendingChainIds ?? k.chainIds ?? [];
@@ -184,15 +210,19 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                 return (
                 <>
                   <span className="text-sm font-medium">{k.name || "Safe"}</span>
+                  {networkFilter !== null && !k.chainIds?.includes(networkFilter) && !k.availableChainIds?.includes(networkFilter) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
                   <span className="text-xs text-muted-foreground">
                     {pending.length > 0
                       ? <>Setup not finished{done.length > 0 && <> — done on {done.map(chainChipId).join(", ")}</>} — finish on {pending.map(chainChipId).join(", ")}. Nothing is paid again.</>
                       : "Setup not finished — the Safe service has not listed it yet. Nothing is paid again."}
                   </span>
-                  {k.chainIds && k.chainIds.length > 0 && (
+                  {k.chainIds && k.chainIds.length > 0 ? (
                     <span className="flex flex-wrap gap-1">{k.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
-                  )}
+                  ) : <span className="text-xs text-muted-foreground">Network unavailable.</span>}
                   <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
+                  {k.availableChainIds && k.availableChainIds.length > 0 && <Button size="lg" variant="outline" disabled={busy} onClick={() => onPick(k.address)}>
+                    Use on {k.availableChainIds.map(chainChipId).join(" and ")}
+                  </Button>}
                 </>
                 );
               })() : (
@@ -204,9 +234,10 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                 >
                   <span className="text-sm font-medium">{k.name || "Safe"}</span>
                   <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
-                  {k.chainIds && k.chainIds.length > 0 && (
+                  {k.chainIds && k.chainIds.length > 0 ? (
                     <span className="flex flex-wrap gap-1">{k.chainIds.map((c) => <NetworkChip key={c} id={chainChipId(c)} className={cn(isTestnet(c) && "border-warning text-warning-text")} />)}</span>
-                  )}
+                  ) : <span className="text-xs text-muted-foreground">Network unavailable; your wallet will be checked when you open it.</span>}
+                  <span className="flex items-center gap-1 text-xs font-medium">Use this Safe <ChevronRight aria-hidden className="size-3.5" /></span>
                 </button>
               )}
               <CardDetails address={k.address} chainId={k.chainIds?.[0]} />
@@ -216,6 +247,14 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
       )}
       {adding ? (
         <AddSafeForm existing={existing} busy={busy} serverError={error} onSubmit={onAdd} onCancel={() => setAdding(false)} />
+      ) : visibleFound.length > 0 ? (
+        <details className="rounded-lg border border-border px-3 py-2">
+          <summary className="cursor-pointer text-sm text-muted-foreground">Other options</summary>
+          <div className="mt-2 flex flex-col gap-2">
+            {onCreate && <Button size="lg" variant="outline" disabled={createDisabled} onClick={onCreate}>Create a new Safe</Button>}
+            <Button size="lg" variant="outline" onClick={() => setAdding(true)}>Add by address</Button>
+          </div>
+        </details>
       ) : (
         <div className="flex flex-col gap-2">
           {empty && onUseAnotherWallet && <Button size="lg" onClick={onUseAnotherWallet}>Use another wallet</Button>}

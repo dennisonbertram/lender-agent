@@ -12,8 +12,9 @@ import { shortAddress } from "@/lib/address";
 import { clearCreateProgress, clearPaymentAttempt, loadCreateProgress, markPaymentUnknown, recordPaidHash, saveCreateProgress } from "@/lib/create-progress";
 import { approvalsHelp, approvalsLabel, approvalsSummary, defaultApprovals, ownerErrors } from "@/lib/owners";
 import { DEFAULT_CREATE_CHAIN_IDS, ENABLED_CHAIN_IDS, MAX_OWNERS, NOT_SERVED_LINE, SAFE_NETWORKS, SERVED_CHAIN_IDS, safeNetworkName, setupFeeEstimate } from "@/lib/safe-create";
+import { CREATE_ONBOARDING_STEPS } from "@/lib/step-bar";
 
-const STEPS = ["Name", "Approvals", "Review"];
+const STEPS = CREATE_ONBOARDING_STEPS.slice(0, 3);
 
 export type Draft = { name: string; cosigners: string[]; threshold: number; networks: number[] };
 export type NetworkFee = { chainId: number; sponsored: boolean; cost: string };

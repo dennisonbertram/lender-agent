@@ -164,19 +164,19 @@ export const SentLine = ({ children }: { children: ReactNode }) => (
 
 export function StepBar({ labels, step, complete = false }: { labels: string[]; step: number; complete?: boolean }) {
   return (
-    <div data-slot="step-bar" className="flex items-center gap-2">
+    <nav aria-label="Onboarding progress" data-slot="step-bar" className="flex items-start gap-1.5 sm:gap-2">
       {labels.map((l, i) => {
         const state = segmentState(i, step, complete);
         return (
-          <div key={l} className="flex flex-1 flex-col gap-1">
-            <span className={cn("h-1 rounded-full", state === "done" ? "bg-foreground/40" : state === "current" ? "bg-foreground" : "bg-border")} />
-            <span aria-current={state === "current" ? "step" : undefined} className={cn("flex items-center gap-1 text-xs", state === "current" ? "font-medium text-foreground" : "text-muted-foreground")}>
-              {state === "done" ? <><Check className="size-3" aria-hidden />{l}</> : `${i + 1} ${l}`}
+          <div key={l} className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className={cn("h-1.5 rounded-full", state === "done" ? "bg-success/70" : state === "current" ? "bg-primary" : "bg-border")} />
+            <span aria-current={state === "current" ? "step" : undefined} className={cn("flex min-h-8 min-w-0 items-start gap-1 rounded-md px-1 py-1 text-[11px] leading-tight", state === "done" ? "font-medium text-success-text" : state === "current" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground")}>
+              {state === "done" ? <><Check className="mt-px size-3 shrink-0" aria-hidden />{l}</> : `${i + 1} ${l}`}
             </span>
           </div>
         );
       })}
-    </div>
+    </nav>
   );
 }
 

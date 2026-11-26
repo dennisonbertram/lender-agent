@@ -61,17 +61,31 @@ afterEach(() => {
 });
 
 describe("onboarding page: a saved Safe whose setup stopped", () => {
-  it("keeps an owned Safe usable while also offering its unfinished setup", () => {
+  it("offers one setup recovery action instead of a second selectable row for a partly deployed Safe", () => {
     ownedData = [{ address: SAFE_A, threshold: 1, ownerCount: 1, chainIds: [8453] }];
     mineData = [pendingSafe];
     render(<OnboardingPage />);
-    expect(screen.getAllByText("Holiday")).toHaveLength(2);
+    expect(screen.getAllByText("Holiday")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
-    expect(screen.getByText("Only you approve transactions.")).toBeTruthy();
+    expect(screen.queryByText("Only you approve transactions.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Use on Base" })).toBeTruthy();
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Only you approve/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Use on Base" }));
     expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
+  });
+
+  it("filters saved-only Safes using their owned network inventory", () => {
+    mineData = [
+      { ...pendingSafe, name: "Base saved", pendingSetup: false, createdChainIds: [], ownedChainIds: [8453], networks: [8453] },
+      { ...pendingSafe, id: 2, address: "0x60157EE8eA450d606F969acb7043DC2Fd6Aa50aB", name: "Arbitrum saved", pendingSetup: false, createdChainIds: [], ownedChainIds: [42161], networks: [42161] },
+    ];
+    render(<OnboardingPage />);
+    expect(screen.getByText("Base saved")).toBeTruthy();
+    expect(screen.getByText("Arbitrum saved")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Base" }));
+    expect(screen.getByText("Base saved")).toBeTruthy();
+    expect(screen.queryByText("Arbitrum saved")).toBeNull();
   });
 
   it("is still offered when the wallet lookup found nothing, and resume re-checks the stored hash instead of paying again", async () => {
@@ -100,6 +114,19 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(api.setup).toHaveBeenCalledWith(SAFE_A, 8453);
     expect(api.setup).not.toHaveBeenCalledWith(SAFE_A, 8453, "0xhash");
     expect(api.payFee).not.toHaveBeenCalled();
+  });
+
+  it("shows a local Safe nickname in onboarding only for its owning wallet", async () => {
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [8453], networks: [8453] }];
+    const key = `la:safeNickname:${W1.toLowerCase()}:${SAFE_A.toLowerCase()}`;
+    localStorage.setItem(key, JSON.stringify("Holiday house"));
+    const { rerender } = render(<OnboardingPage />);
+    expect(await screen.findByText("Holiday house")).toBeTruthy();
+    expect(screen.queryByText("Holiday", { exact: true })).toBeNull();
+    wallet = W2;
+    rerender(<OnboardingPage />);
+    await waitFor(() => expect(screen.queryByText("Holiday house")).toBeNull());
+    expect(screen.getByText("Holiday", { exact: true })).toBeTruthy();
   });
 
   it("does not claim no Safe was saved while the saved list is loading", () => {

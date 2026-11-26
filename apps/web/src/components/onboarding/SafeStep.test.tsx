@@ -17,6 +17,55 @@ describe("SafeStep", () => {
     fireEvent.click(screen.getByRole("button", { name: /2 of 3 owners/ }));
     expect(onPick).toHaveBeenCalledWith(A);
   });
+  it("filters discovered Safes by network, defaults to all, and keeps pending recovery visible", () => {
+    render(<SafeStep found={[
+      { address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453] },
+      { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Arbitrum Safe", threshold: 1, ownerCount: 1, chainIds: [42161] },
+      { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0004", name: "Unreported Safe", threshold: 1, ownerCount: 1, chainIds: [] },
+    ]} known={[{ address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0003", name: "Pending Safe", pendingSetup: true, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByRole("button", { name: "All networks" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Base" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arbitrum" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Base" }).querySelector("img")?.getAttribute("alt")).toBe("");
+    expect(screen.getByText("Base Safe")).toBeTruthy();
+    expect(screen.getByText("Arbitrum Safe")).toBeTruthy();
+    expect(screen.getByText("Unreported Safe")).toBeTruthy();
+    expect(screen.getByText("Network unavailable.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Base" }));
+    expect(screen.getByText("Base Safe")).toBeTruthy();
+    expect(screen.queryByText("Arbitrum Safe")).toBeNull();
+    expect(screen.queryByText("Unreported Safe")).toBeNull();
+    expect(screen.getByText("Pending Safe")).toBeTruthy();
+  });
+  it("keeps an All networks reset available if refreshed results remove the selected network", () => {
+    const { rerender } = render(<SafeStep found={[
+      { address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453] },
+      { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Arbitrum Safe", threshold: 1, ownerCount: 1, chainIds: [42161] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    rerender(<SafeStep found={[{ address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByRole("button", { name: "All networks" })).toBeTruthy();
+    expect(screen.queryByText("Base Safe")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "All networks" }));
+    expect(screen.getByText("Base Safe")).toBeTruthy();
+  });
+  it("keeps a multi-network Safe selectable under each of its verified networks", () => {
+    render(<SafeStep found={[{ address: A, name: "Shared Safe", threshold: 2, ownerCount: 3, chainIds: [8453, 42161] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Base" }));
+    expect(screen.getByText("Shared Safe")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    expect(screen.getByText("Shared Safe")).toBeTruthy();
+  });
+  it("replaces a discovered partial setup with its single recovery action and suppresses the saved duplicate", () => {
+    render(<SafeStep found={[{ address: A, name: "Holiday", threshold: 2, ownerCount: 3, chainIds: [8453, 42161] }]} known={[
+      { address: A.toLowerCase(), name: "Holiday saved", chainIds: [8453, 42161] },
+      { address: A.toLowerCase(), name: "Holiday setup", pendingSetup: true, chainIds: [8453], pendingChainIds: [42161] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.queryByRole("button", { name: /Holiday$/ })).toBeNull();
+    expect(screen.queryByText("Holiday saved")).toBeNull();
+    expect(screen.getByText("Holiday setup")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+  });
   it("shows the r21 errors in Add by address", () => {
     const onAdd = vi.fn();
     render(<SafeStep found={[]} existing={[A]} onPick={() => {}} onAdd={onAdd} />);
@@ -88,6 +137,7 @@ describe("SafeStep", () => {
   });
   it("adding by address hides the Safe cards", () => {
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByText("Other options"));
     fireEvent.click(screen.getByRole("button", { name: "Add by address" }));
     expect(screen.queryByRole("button", { name: /2 of 3 owners/ })).toBeNull();
   });
@@ -98,6 +148,7 @@ describe("SafeStep", () => {
   it("with found Safes, Create is secondary and the heading says Choose a Safe", () => {
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} onCreate={() => {}} />);
     expect(screen.getByRole("heading", { name: "Choose a Safe" })).toBeTruthy();
+    fireEvent.click(screen.getByText("Other options"));
     expect(screen.getByRole("button", { name: "Create a new Safe" }).className).not.toContain("bg-primary");
   });
   it("a one-owner Safe reads Only you approve", () => {

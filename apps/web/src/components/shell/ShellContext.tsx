@@ -42,18 +42,21 @@ export type ShellState = {
   setSafeNickname?: (address: string, value: string) => boolean;
 };
 
-const nicknamePrefix = (wallet: string) => `la:safeNickname:${wallet.toLowerCase()}:`;
-const nicknameKey = (wallet: string, address: string) => `${nicknamePrefix(wallet)}${address.toLowerCase()}`;
+export const safeNicknameStoragePrefix = (wallet: string) => `la:safeNickname:${wallet.toLowerCase()}:`;
+export const safeNicknameStorageKey = (wallet: string, address: string) => `${safeNicknameStoragePrefix(wallet)}${address.toLowerCase()}`;
+export function readSafeNickname(wallet: string | undefined, address: string): string | undefined {
+  if (!wallet || typeof window === "undefined") return undefined;
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(safeNicknameStorageKey(wallet, address)) ?? "null");
+    return typeof value === "string" && value.trim() ? value.trim().replace(/\s+/g, " ").slice(0, 40) : undefined;
+  } catch { return undefined; }
+}
 function readNicknames(wallet: string | undefined, addresses: string[]): Record<string, string> {
   if (!wallet || typeof window === "undefined") return {};
   const names: Record<string, string> = {};
   for (const address of addresses) {
-    try {
-      const raw = localStorage.getItem(nicknameKey(wallet, address));
-      if (raw === null) continue;
-      const value: unknown = JSON.parse(raw);
-      if (typeof value === "string" && value.trim()) names[address.toLowerCase()] = value.trim().replace(/\s+/g, " ").slice(0, 40);
-    } catch { /* bad or blocked storage falls back to the default name */ }
+    const name = readSafeNickname(wallet, address);
+    if (name) names[address.toLowerCase()] = name;
   }
   return names;
 }
@@ -68,7 +71,7 @@ export function ShellProvider({ children, safe, safes, loans, loansError, chainI
   useEffect(() => {
     setNicknames(readNicknames(walletAddress, addresses));
     setNicknamesWallet(walletAddress?.toLowerCase());
-    const prefix = walletAddress ? nicknamePrefix(walletAddress) : "";
+    const prefix = walletAddress ? safeNicknameStoragePrefix(walletAddress) : "";
     const onStorage = (event: StorageEvent) => {
       if (!walletAddress || (event.key !== null && !event.key.startsWith(prefix))) return;
       if (event.key === null) setNicknames(readNicknames(walletAddress, addresses));
@@ -93,7 +96,7 @@ export function ShellProvider({ children, safe, safes, loans, loansError, chainI
     const name = input.trim().replace(/\s+/g, " ").slice(0, 40);
     let stored = false;
     try {
-      const key = nicknameKey(walletAddress, address);
+      const key = safeNicknameStorageKey(walletAddress, address);
       if (name) localStorage.setItem(key, JSON.stringify(name)); else localStorage.removeItem(key);
       stored = true;
     } catch { /* browser storage can be disabled; keep the last confirmed display */ }
