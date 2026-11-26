@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794625077332,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794669814222,
+      "tag": "0001_proposals_hash_live_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794690173229,
+      "tag": "0002_bp31_deposits",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794690772597,
+      "tag": "0003_e4_monitor",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794690830227,
+      "tag": "0004_e7_create_safe",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794691827674,
+      "tag": "0005_e7_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794694362007,
+      "tag": "0006_wave_b",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794695443773,
+      "tag": "0007_wave_c",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794697250247,
+      "tag": "0008_reserve_exec_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794759541941,
+      "tag": "0009_cloudy_ultimo",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795034392811,
+      "tag": "0010_neat_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795043699555,
+      "tag": "0011_safe_submission_intent",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795468482514,
+      "tag": "0012_keen_toad_men",
+      "breakpoints": true
+    }
+  ]
+}

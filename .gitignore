@@ -1,0 +1,21 @@
+node_modules
+dist
+.next/
+out/
+.vercel/
+coverage/
+next-env.d.ts
+*.tsbuildinfo
+
+# Local environment files
+.env*
+!.env.example
+!.env.*.example
+
+# UX review screenshots stay local
+docs/**/shots/
+docs/ux-flow/journeys/*-screens/
+docs/ux-visual/pages/*/*.sh
+docs/ux-visual/pages/*/*.js
+docs/ux-walker/stories/*/screenshots/
+.vercel

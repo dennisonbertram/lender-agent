@@ -1,0 +1,2 @@
+DROP INDEX "proposals_hash_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "proposals_hash_idx" ON "proposals" USING btree ("chain_id","safe_tx_hash") WHERE "proposals"."stage" <> 'not_sent' and not "proposals"."deleted_from_queue";

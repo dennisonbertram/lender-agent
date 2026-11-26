@@ -1,0 +1,101 @@
+"use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getAddress } from "viem";
+import { useSession, useSignOut } from "@/client/auth/useSession";
+import { useAddSafe, useOwnedSafes, useSafes } from "@/client/safes";
+import { useCreateSafeApi } from "@/client/create-safe";
+import { Spinner } from "@/components/ui/spinner";
+import { StepBar } from "@/components/common";
+import { CreateSafe } from "@/components/onboarding/CreateSafe";
+import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
+import { SafeStep } from "@/components/onboarding/SafeStep";
+import { shortAddress } from "@/lib/address";
+import { onboardingBar } from "@/lib/step-bar";
+
+function Onboarding() {
+  const { session, loading } = useSession();
+  const signOut = useSignOut();
+  const router = useRouter();
+  const owned = useOwnedSafes();
+  const mine = useSafes();
+  const add = useAddSafe();
+  const createApi = useCreateSafeApi();
+  const [creating, setCreating] = useState(false);
+  const [createStep, setCreateStep] = useState(0);
+  const [resume, setResume] = useState<{ address: string; name?: string; chainIds: number[] } | null>(null);
+  useEffect(() => {
+    if (!loading && !session) router.replace("/");
+  }, [loading, session, router]);
+  if (loading || !session) return <OnboardingCard><p role="status" className="flex items-center gap-2 text-sm"><Spinner /> Checking your session…</p></OnboardingCard>;
+
+  const bar = onboardingBar({ screen: "safe", path: creating ? "create" : "found", createStep });
+  const mineList = mine.data ?? [];
+  const names = new Map(mineList.map((s) => [s.address.toLowerCase(), s.name]));
+  const go = (address: string, agent: boolean) => router.push(agent ? `/s/${address}/chat` : `/onboarding/agent?safe=${address}`);
+  const save = (v: { address: string; name?: string }) => add.mutate(v, { onSuccess: (r) => go(r.address, r.agent) });
+  // A Safe already in the list is not saved again: go on to its agent step.
+  const pick = (address: string) => (names.has(address.toLowerCase()) ? go(address, false) : save({ address }));
+  // The Safes saved earlier that the wallet lookup did not also find — plus every unfinished in-app setup, which shows as
+  // a resumable record (not a plain card) even when the lookup also found it on a finished network.
+  const foundAddrs = new Set((owned.data ?? []).map((s) => s.address.toLowerCase()));
+  const known = mineList
+    .filter((s) => s.pendingSetup || !foundAddrs.has(s.address.toLowerCase()))
+    .map((s) => ({ address: s.address, name: s.name, pendingSetup: s.pendingSetup, chainIds: s.createdChainIds,
+      pendingChainIds: s.createdChainIds.filter((c) => !s.deployedChainIds.includes(c)) }));
+  const openResume = (address: string) => {
+    const k = mineList.find((s) => s.address.toLowerCase() === address.toLowerCase());
+    setResume({ address, name: k?.name, chainIds: k?.createdChainIds ?? k?.recordedChainIds ?? k?.networks ?? [] });
+    setCreating(true);
+  };
+  const leaveCreate = () => { setCreating(false); setResume(null); void mine.refetch(); };
+
+  return (
+    <OnboardingCard>
+        {bar && <StepBar {...bar} />}
+        {creating ? (
+          <CreateSafe
+            embedded
+            wallet={session.address}
+            api={createApi}
+            resume={resume ?? undefined}
+            onProgress={(p) => setCreateStep(p.step)}
+            onCancel={leaveCreate}
+            onCreated={(safe) => router.push(`/onboarding/agent?safe=${safe.address}&path=create`)}
+          />
+        ) : (
+        <SafeStep
+          wallet={session.address}
+          onCreate={() => { setResume(null); setCreating(true); }}
+          onUseAnotherWallet={() => void signOut()}
+          found={(owned.data ?? []).map((s) => ({ ...s, name: names.get(s.address.toLowerCase()) }))}
+          known={known}
+          loading={owned.isLoading}
+          lookupFailed={!!owned.error}
+          savedLoading={mine.isLoading}
+          savedLookupFailed={!!mine.error}
+          createDisabled={mine.isLoading || !!mine.error}
+          existing={mineList.map((s) => s.address)}
+          busy={add.isPending}
+          error={add.error?.message ?? (owned.error ? "We could not look up your Safes. Add one by address." : null)}
+          onPick={pick}
+          onAdd={save}
+          onRetry={() => { void owned.refetch(); void mine.refetch(); }}
+          onResume={openResume}
+        />
+        )}
+      {!creating && (
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          Signed in as {shortAddress(getAddress(session.address))} ·{" "}
+          <button type="button" className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={() => void signOut()}>
+            Use another wallet
+          </button>
+        </p>
+      )}
+    </OnboardingCard>
+  );
+}
+
+export default function OnboardingPage() {
+  return <Onboarding />;
+}
