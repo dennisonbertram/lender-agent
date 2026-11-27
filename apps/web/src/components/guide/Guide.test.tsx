@@ -107,6 +107,19 @@ describe("Guide", () => {
     expect(document.activeElement).toBe(keep);
   });
 
+  it("keeps the compact intro inline without repeating the topic title, and still opens the right walkthrough", () => {
+    pathname = "/onboarding";
+    render(page(<GuideIntro topicId="choose-safe" compact />));
+    const note = screen.getByRole("note");
+    // The screen's own heading already says "Choose a Safe" — the compact intro carries the summary only.
+    expect(note.textContent).toContain("Pick the Safe to borrow with.");
+    expect(note.textContent).not.toContain("Choose a Safe");
+    expect(note.getAttribute("aria-label")).toBe("Choose a Safe — guide");
+    fireEvent.click(screen.getByRole("button", { name: "Walk through the steps" }));
+    expect(screen.getByText("Pick a Safe")).toBeTruthy();
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
   it("treats 'Hide all guides' on an intro as hiding every intro on this device, manual Guide still works", () => {
     const { rerender } = render(page(<><GuideIntro /><GuideButton /></>));
     fireEvent.click(screen.getByRole("button", { name: "Hide automatic introductions on this device" }));

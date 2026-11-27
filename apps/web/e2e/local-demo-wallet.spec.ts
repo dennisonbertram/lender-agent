@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MOCK_SAFE } from "./helpers";
+import { MOCK_SAFE, openSafe } from "./helpers";
 
 test("local demo uses its synthetic wallet and keeps wallet transfers off external RPCs", async ({ page, baseURL }) => {
   const origin = new URL(baseURL!).origin;
@@ -29,14 +29,15 @@ test("local demo uses its synthetic wallet and keeps wallet transfers off extern
   const signIn = page.getByRole("button", { name: /Connect wallet|Sign in with wallet/ });
   await signIn.click();
   await expect(page).toHaveURL(/\/onboarding/);
-  await page.getByRole("button", { name: /2 of 2 owners/ }).click();
+  await openSafe(page, MOCK_SAFE);
   await page.getByRole("button", { name: "Add Lender agent" }).click();
   await expect(page).toHaveURL(new RegExp(`/s/${MOCK_SAFE}/chat`, "i"));
   const wallet = page.getByRole("button", { name: /Your wallet/ });
   await expect(wallet).toBeVisible();
   await wallet.click();
-  await expect(page.getByRole("note")).toContainText("Demo Safe is already funded in the mock world.");
-  await expect(page.getByRole("note")).toContainText("Sending from a wallet is unavailable in this local demo.");
+  const note = page.getByRole("note").filter({ hasText: "Demo Safe is already funded in the mock world." });
+  await expect(note).toContainText("Demo Safe is already funded in the mock world.");
+  await expect(note).toContainText("Sending from a wallet is unavailable in this local demo.");
   await expect(page.getByLabel("Amount")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Send to Safe/ })).toHaveCount(0);
   const extensionUntouched = await page.evaluate(() => {
