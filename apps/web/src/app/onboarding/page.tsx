@@ -7,7 +7,7 @@ import { useAddSafe, useOwnedSafes, useSafes } from "@/client/safes";
 import { useCreateSafeApi } from "@/client/create-safe";
 import { Spinner } from "@/components/ui/spinner";
 import { StepBar } from "@/components/common";
-import { GuideButton, GuideIntro } from "@/components/guide/Guide";
+import { GuideIntro } from "@/components/guide/Guide";
 import { CreateSafe } from "@/components/onboarding/CreateSafe";
 import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { SafeStep } from "@/components/onboarding/SafeStep";
@@ -74,12 +74,7 @@ function Onboarding() {
   }
 
   return (
-    <OnboardingCard wide>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        {bar && <div className="min-w-0 max-w-md flex-1"><StepBar {...bar} /></div>}
-        <GuideButton />
-      </div>
-      <GuideIntro topicId="choose-safe" compact />
+    <OnboardingCard wide header={bar ? <div className="min-w-0 max-w-md flex-1"><StepBar {...bar} variant="picker" /></div> : undefined}>
       <SafeStep
         wallet={session.address}
         onCreate={() => { setResume(null); setCreating(true); }}

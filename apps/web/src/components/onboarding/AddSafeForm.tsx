@@ -21,7 +21,7 @@ export function AddSafeForm({ existing, busy, serverError, onSubmit, onCancel }:
   return (
     <form
       noValidate
-      className="flex flex-col gap-3"
+      className="flex w-full max-w-md flex-col gap-3"
       onSubmit={(e) => { e.preventDefault(); setTried(true); if (!local) onSubmit({ address: address.trim(), name: name.trim() }); }}
     >
       <Field label="Safe address" tone={(tried || address) && err ? "error" : "hint"} message={tried || address ? err ?? undefined : "Copy it from your Safe app, under the Safe's name."}>

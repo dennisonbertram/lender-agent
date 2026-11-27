@@ -159,15 +159,18 @@ describe("SafeStep", () => {
     expect(screen.getByText(shortAddress(A))).toBeTruthy();
     expect(screen.getAllByText(/\$7,500/)).toHaveLength(1);
   });
-  it("lays found Safes out as an equal-width tile grid, each tile carrying the pick action and its disclosure", () => {
+  it("lays found Safes out as an equal-width fluid tile grid, each tile carrying the pick action and its disclosure", () => {
     render(<SafeStep found={[
       { address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 7500, balanceChainIds: [8453] },
       { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Arbitrum Safe", threshold: 1, ownerCount: 1, chainIds: [42161] },
     ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
-    const grid = screen.getByRole("list", { name: "Your Safes" });
+    const list = screen.getByRole("list", { name: "Your Safes" });
+    const grid = list.parentElement!;
     expect(grid.className).toMatch(/\bgrid\b/);
-    expect(grid.className).toMatch(/sm:grid-cols-2/);
-    expect(grid.className).toMatch(/lg:grid-cols-3/);
+    // Fluid auto-fill tracks of at least ~19rem: four-plus columns at 1440px, five-plus at
+    // 1920px, one on phones — and a lone card keeps its natural size instead of stretching.
+    expect(grid.className).toMatch(/repeat\(auto-fill/);
+    expect(grid.className).toMatch(/minmax\(min\(100%/);
     const tile = screen.getAllByRole("listitem")[0];
     // The tile carries identity and balance; Open Safe and the details disclosure are
     // independent controls in one bottom row, never nested in each other.
@@ -181,6 +184,36 @@ describe("SafeStep", () => {
     expect(within(tile).getByText("Base")).toBeTruthy();
     fireEvent.click(details);
     expect(details.getAttribute("aria-expanded")).toBe("true");
+  });
+  it("puts the title and the network filters on one row that wraps when narrow", () => {
+    render(<SafeStep found={[
+      { address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453] },
+      { address: "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002", name: "Arbitrum Safe", threshold: 1, ownerCount: 1, chainIds: [42161] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const row = screen.getByRole("heading", { name: "Choose a Safe" }).parentElement!;
+    const filters = screen.getByRole("group", { name: "Show Safes on" });
+    expect(row.className).toMatch(/flex-wrap/);
+    expect(row.contains(filters)).toBe(true);
+  });
+  it("flows recovery and regular Safes through the same grid while keeping named lists", () => {
+    const recovery = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0003";
+    render(<SafeStep found={[{
+      address: A, name: "Regular Safe", threshold: 1, ownerCount: 1, chainIds: [8453],
+    }]} known={[{
+      address: recovery, name: "Recovery Safe", pendingSetup: true,
+      chainIds: [8453], pendingChainIds: [8453],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} onResume={() => {}} />);
+    const recoveryList = screen.getByRole("list", { name: "Finish setting up" });
+    const regularList = screen.getByRole("list", { name: "Your Safes" });
+    expect(recoveryList.parentElement).toBe(regularList.parentElement);
+    expect(recoveryList.className).toMatch(/contents/);
+    expect(regularList.className).toMatch(/contents/);
+    expect(within(recoveryList).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(regularList).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("Recovery Safe"), expect.stringContaining("Regular Safe")]),
+    );
+    expect(screen.getAllByRole("listitem")[0].textContent).toContain("Recovery Safe");
   });
   it("a failed lookup offers Retry and keeps already-saved Safes pickable", () => {
     const retry = vi.fn();
