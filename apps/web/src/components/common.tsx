@@ -67,9 +67,9 @@ export function Stat({ label, value, sub, className }: { label: string; value: R
   );
 }
 
-export function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+export function Panel({ title, children, action, guideTarget }: { title: string; children: ReactNode; action?: ReactNode; guideTarget?: string }) {
   return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+    <section data-guide-target={guideTarget} className="flex min-w-0 flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium">{title}</h3>
         {action}

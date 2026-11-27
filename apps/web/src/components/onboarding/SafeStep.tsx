@@ -242,7 +242,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
         {networkFilter !== null && visibleFound.length === 0 && visibleKnown.length === 0 && <p className="text-sm">{hasUnknownNetwork
           ? <>No Safes with reported network information found on {chainChipId(networkFilter)}. Choose All networks to review Safes whose network is unavailable.</>
           : <>No Safes found on {chainChipId(networkFilter)}.</>}</p>}
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-2" data-guide-target={visibleFound.length > 0 ? "choose-safe" : undefined}>
           {visibleFound.map((s) => (
             <li key={s.address} className="flex flex-col gap-1.5 rounded-xl p-3 ring-1 ring-foreground/10 hover:bg-muted/50">
               <button
@@ -276,7 +276,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
         </>
       )}
       {!adding && visibleKnown.length > 0 && (
-        <ul aria-label="Saved Safes" className="flex flex-col gap-2">
+        <ul aria-label="Saved Safes" className="flex flex-col gap-2" data-guide-target="choose-safe">
           {visibleKnown.map((k) => (
             <li key={k.address} className="flex flex-col gap-1.5 rounded-xl p-3 ring-1 ring-foreground/10 hover:bg-muted/50">
               {k.pendingSetup ? (() => {

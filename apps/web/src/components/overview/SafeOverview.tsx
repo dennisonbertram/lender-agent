@@ -19,6 +19,7 @@ import { attentionCounts, riskHeadline } from "@/lib/loan-copy";
 import { watchLine } from "@/lib/watch-copy";
 import { actionLabel, describe } from "@/components/proposals/review-state";
 import { SendToSafe } from "@/components/wallet/SendToSafe";
+import { GuideIntro } from "@/components/guide/Guide";
 
 type RepaymentNeed = { chainId: number; network: string; shortfall: number | null; balanceKnown: boolean; otherDebt: boolean };
 const tokenAmount = (amount: number, decimals: number) => amount.toLocaleString("en-US", { maximumFractionDigits: decimals });
@@ -151,6 +152,7 @@ export function SafeOverview() {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       {header}
+      <GuideIntro topicId="overview" />
       {q.error && q.data && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm"><span>Could not refresh loan data. The figures below may be out of date.</span><Button size="sm" variant="outline" onClick={() => void q.refetch()}>Retry</Button></div>}
       {!watched && !agentOn && (loans.length > 0 ? (
         <Panel title="Not watched">
@@ -206,7 +208,7 @@ export function SafeOverview() {
         </Panel>
       )}
       {(funded || loans.length > 0) ? (
-        <Panel title="In your Safe" action={<span className="text-sm tabular-nums" data-testid="in-safe">{total === null ? "Price unavailable" : usd(total)}</span>}>
+        <Panel title="In your Safe" guideTarget="overview-balances" action={<span className="text-sm tabular-nums" data-testid="in-safe">{total === null ? "Price unavailable" : usd(total)}</span>}>
           <dl className="flex flex-col gap-1 text-sm" data-testid="net-position">
             <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Spendable today</dt><dd className="tabular-nums">{total === null ? "Price unavailable" : usd(total)}</dd></div>
             {loans.length > 0 && <>

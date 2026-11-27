@@ -66,7 +66,7 @@ function Menu({ userLabel, userAddress, safe, chainId, ownedChainIds = [], onSig
   return (
     <div className="flex items-center gap-2 px-2.5 pt-2">
       <Popover.Root>
-        <Popover.Trigger aria-label={`Your wallet: ${userLabel}`} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none hover:bg-sidebar-accent/70 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11">
+        <Popover.Trigger data-guide-target="wallet-menu" aria-label={`Your wallet: ${userLabel}`} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none hover:bg-sidebar-accent/70 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sidebar-accent"><Wallet className="size-3.5" aria-hidden /></span>
           <span className="min-w-0 flex-1 truncate font-mono text-sm">{userLabel}</span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />

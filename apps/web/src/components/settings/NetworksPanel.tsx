@@ -27,7 +27,7 @@ export function NetworksPanel({ safeName, rows, progress, busy, error, onAddAgen
   const [pick, setPick] = useState<Network | undefined>();
   const choice = free.find((r) => r.id === pick) ?? free[0];
   return (
-    <Panel title="Networks">
+    <Panel guideTarget="settings-networks" title="Networks">
       <p className="text-sm text-muted-foreground">{safeName} has the same address on every network. It is set up on a network the first time you use it there. The agent needs one signature on each network where it should suggest transactions.</p>
       <ul className="flex flex-col gap-2">
         {added.map((r) => (

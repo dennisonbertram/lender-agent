@@ -18,7 +18,7 @@ export function SafeNicknameEditor({ address, safeName, nickname, enabled = true
     }
   };
   return (
-    <section aria-label="Safe nickname" className="rounded-xl border border-edge p-3">
+    <section aria-label="Safe nickname" className="rounded-xl border border-edge p-3" data-guide-target="settings-nickname">
       <label htmlFor="safe-nickname" className="mb-1 block text-sm font-medium">Safe nickname</label>
       <p className="mb-2 text-xs text-muted-foreground">Default name: <span className="font-medium text-foreground">{safeName}</span>. A nickname changes only what this browser displays; it is stored for this wallet and Safe.</p>
       <div className="flex flex-wrap items-center gap-2">

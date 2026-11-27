@@ -15,6 +15,7 @@ export function Composer({ placeholder, disabled, onSend }: { placeholder: strin
   return (
     <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex items-center gap-2 rounded-full border border-border bg-card py-1.5 pr-1.5 pl-4 focus-within:ring-2 focus-within:ring-ring">
       <input
+        data-guide-target="chat-compose"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={placeholder}

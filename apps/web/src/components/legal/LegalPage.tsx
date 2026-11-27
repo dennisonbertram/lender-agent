@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { GuideButton } from "@/components/guide/Guide";
 import styles from "./legal-page.module.css";
 
 export function LegalPage({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
@@ -7,7 +8,10 @@ export function LegalPage({ title, updated, children }: { title: string; updated
     <main className={styles.page}>
       <div className={styles.topbar}>
         <Link className={styles.brand} href="/" aria-label="Lender agent home"><span className={styles.mark}>L</span><span>Lender agent</span></Link>
-        <Link className={styles.home} href="/">Back to home <span aria-hidden="true">↗</span></Link>
+        <nav aria-label="Main navigation" className="flex items-center gap-3">
+          <Link className={styles.home} href="/">Back to home <span aria-hidden="true">↗</span></Link>
+          <GuideButton />
+        </nav>
       </div>
       <article className={styles.article}>
         <p className={styles.eyebrow}>LENDER AGENT · LEGAL</p>

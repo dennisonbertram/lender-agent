@@ -9,6 +9,7 @@ import { ApiError } from "@/client/safes";
 import { useLoans, type LoanView } from "@/client/loans";
 import { useChangeReservePolicy, useLinkReserve, useReserve, useReserveCheck, useTurnReserveOff } from "@/client/reserve";
 import { ActionFooter, CanCannot, PageHeader, Panel } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { useShell } from "@/components/shell/ShellContext";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -174,6 +175,7 @@ function LinkForm({ address, safeName, intro, initial, knownSafes = [] }: { addr
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <PageHeader title="Reserve" sub="Optional. The one place the agent acts without your signature." />
+      <GuideIntro topicId="reserve" />
       {intro}
       <SafeIdentity address={address} chainId={CHAIN_ID} label={`${safeName} (your Safe)`} />
       <Panel title="Reserve Safe">
@@ -285,6 +287,7 @@ function LinkedBody({ view, address, safeName, knownSafes, onRetry }: { onRetry:
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <PageHeader title="Reserve" sub={`Base only · Aave loans of ${safeName}`} />
+      <GuideIntro topicId="reserve" />
       <SafeIdentity address={policy.reserve} chainId={CHAIN_ID} label="Reserve Safe" />
 
       <div className={cn("flex items-start gap-2 rounded-xl p-3 text-sm", bannerStyle[status.tone])}>
@@ -315,7 +318,7 @@ function LinkedBody({ view, address, safeName, knownSafes, onRetry }: { onRetry:
         </div>
       )}
 
-      <Panel title="What the agent may do">
+      <Panel guideTarget="reserve-protection" title="What the agent may do">
         <CanCannot {...policy.copy} />
         <p className="text-xs text-muted-foreground">{policy.copy.enforced}</p>
         <form noValidate className="contents" onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !pending) sign(); }}>

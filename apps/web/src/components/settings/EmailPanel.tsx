@@ -50,7 +50,7 @@ export function EmailPanel({ value, onSave }: { value: EmailSettings; onSave: (n
     void run({ enabled: false }, "Saved. Emails are off. The edited address was not saved because it is invalid.");
   };
   return (
-    <Panel title="Email alerts">
+    <Panel guideTarget="settings-email" title="Email alerts">
       <p className="text-sm text-muted-foreground">Alerts can notify you when a loan falls below your At-risk level or a plan needs approval. Email depends on an enabled address and available delivery. Email is used only for alerts.</p>
       <div className="flex flex-wrap items-center gap-2">
         <Input type="email" aria-label="Email address" className="max-w-xs" value={email} placeholder="you@example.com" disabled={saving} onChange={(e) => setEmail(e.target.value)} />

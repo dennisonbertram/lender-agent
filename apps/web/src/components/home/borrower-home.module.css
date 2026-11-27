@@ -34,6 +34,7 @@
 .hero h1 { max-width: 700px; margin: 0; color: var(--home-cream); font-size: clamp(54px, 5.8vw, 86px); font-weight: 390; letter-spacing: -.075em; line-height: .98; overflow-wrap: anywhere; }
 .hero h1 em { color: var(--home-copper-light); font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
 .intro { max-width: 410px; margin: 25px 0 22px; color: #c1c4c0; font-size: 15px; line-height: 1.68; }
+.heroCopy > aside[role="note"] { max-width: 410px; margin-top: 20px; border: 1px solid var(--home-line); border-radius: 6px; background: transparent; box-shadow: none; }
 .signIn { width: min(100%, 380px); scroll-margin-top: 20px; }
 .signIn > :global(button) { min-height: 54px; border: 1px solid var(--home-copper-edge); border-radius: 3px; background: var(--home-copper); color: var(--home-button-ink); font-size: 14px; font-weight: 650; transition: background .18s ease, transform .18s ease; }
 .signIn > :global(button:hover:not(:disabled)) { background: var(--home-copper-light); transform: translateY(-1px); }
@@ -101,6 +102,10 @@
   .footer nav { gap: 18px; }
 }
 
+@media (max-width: 380px) {
+  .nav { gap: 9px; }
+  .nav a[href="#how-it-works"] { display: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .nav a, .signIn > :global(button) { transition: none; }
 }

@@ -15,6 +15,7 @@ import { QuoteError, useQuote, useSendPlan, type QuoteInput } from "@/client/quo
 import { ProposalCardSlot } from "@/components/chat/ProposalCardSlot";
 import { AddAgentAction } from "@/components/agent/AgentOffNotice";
 import { ActionFooter, radioCard, useFocusOnChange } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { safePaths } from "@/components/shell/Sidebar";
 import { useSafeNickname, useShell } from "@/components/shell/ShellContext";
 import { Button } from "@/components/ui/button";
@@ -210,6 +211,7 @@ export function GetCash({ address }: { address: string }) {
       const names = d.unread.map((u) => u.name).join(" and ");
       return (
         <Card>
+          <GuideIntro topicId="quote" />
           <h1 className="text-lg font-medium">I couldn't check {names} — anything held there isn't counted.</h1>
           <p className="text-xs text-muted-foreground">On {d.networkName} this Safe {d.state === "empty" ? "holds nothing to borrow against" : `doesn't hold enough to borrow ${usd(MIN_LOAN)} safely`}, but funds on {names} may already cover the loan.</p>
           <Button size="lg" onClick={() => { void first.refetch(); void gc.refetch(); }}>Try again</Button>
@@ -219,6 +221,7 @@ export function GetCash({ address }: { address: string }) {
     }
     return (
       <Card>
+        <GuideIntro topicId="quote" />
         <h1 className="text-lg font-medium">{d.state === "empty" ? "Add ETH or wstETH to this Safe first." : `This Safe doesn't hold enough to borrow ${usd(MIN_LOAN)} safely.`}</h1>
         <p className="text-xs text-muted-foreground">You borrow against ETH or wstETH. Once it holds some, I can plan a loan.</p>
         {d.state === "empty" && (
@@ -269,6 +272,7 @@ export function GetCash({ address }: { address: string }) {
   return (
     <Card>
       <SafeIdentity address={address} chainId={d.chainId} />
+      <GuideIntro topicId="quote" />
 
       {switching && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner /> Checking {d.otherFunded.find((o) => o.network === picked)?.name ?? "that network"}…</p>}
       {gc.isError && picked && (
@@ -315,9 +319,11 @@ export function GetCash({ address }: { address: string }) {
           <h1 ref={head} tabIndex={-1} className="text-lg font-medium outline-none">How much cash do you need?</h1>
           {owed > 0 && <p className="text-sm text-muted-foreground">On top of your {usd(owed)} loan.</p>}
           <form noValidate className="contents" onSubmit={(e) => { e.preventDefault(); if (canSend) onSend(); }}>
-            <Field label="Cash you need" labelHidden messageClassName="min-h-8" tone={check.ok ? "hint" : check.tone} message={check.message}>
-              {(p) => <Input {...p} inputMode="decimal" placeholder="Amount in dollars" autoFocus={waiting.length === 0} className="h-12 text-xl font-medium md:text-xl" value={text} onChange={(e) => editAmount(e.target.value)} />}
-            </Field>
+            <div>
+              <Field label="Cash you need" labelHidden messageClassName="min-h-8" tone={check.ok ? "hint" : check.tone} message={check.message}>
+                {(p) => <Input {...p} data-guide-target="quote-amount" inputMode="decimal" placeholder="Amount in dollars" autoFocus={waiting.length === 0} className="h-12 text-xl font-medium md:text-xl" value={text} onChange={(e) => editAmount(e.target.value)} />}
+              </Field>
+            </div>
             <div className="flex flex-wrap gap-2">
               {!check.ok && check.useMax !== undefined && <Button type="button" variant="outline" size="sm" onClick={() => editAmount(usd(check.useMax!))}>Use {usd(check.useMax)}</Button>}
               {d.chips.filter((c) => check.ok || check.useMax === undefined || c.amount !== check.useMax).map((c) => <Button key={c.label} type="button" variant="outline" size="sm" onClick={() => editAmount(usd(c.amount))}>{c.label}</Button>)}
@@ -331,7 +337,7 @@ export function GetCash({ address }: { address: string }) {
                   <>
                     {capped && <p role="status" className="text-sm font-medium">{qd.cash < cash ? `Only ${usd(qd.cash)} is possible with ${quote.asset}` : `This plan is for ${usd(qd.cash)} with ${quote.asset}`} <Button type="button" variant="link" size="inline" onClick={() => setText(usd(qd.cash))}>Use {usd(qd.cash)}</Button></p>}
                     {was && <p className="rounded-md border border-border px-3 py-2 text-xs">{wasNowLine(was, { lender: quote.lender, apr: quote.apr, yearly: quote.yearly })}</p>}
-                    <ul className="flex flex-col gap-3 text-sm">
+                    <ul className="flex flex-col gap-3 text-sm" data-guide-target="quote-review">
                       <Row icon={Banknote}>You get {usd(quote.cash)} as {quote.borrowAsset}, a digital dollar, in <AddressText address={address} chainId={d.chainId} className="align-middle" /> ({quote.network}).</Row>
                       <Row icon={TrendingDown}>{planSummary({ cash: quote.cash, venue: quote.lender, apr: quote.apr, collateral: quote.collateral, asset: quote.asset, price: quote.price, liqPrice: quote.liqPrice, dropPct: quote.dropPct, adding: quote.adding })[1]} Monitoring on {d.networkName}: {quoteNetworkStatus}. Safe status: {watch.line}. In-app alerts are available when monitoring is active. {email.isPending ? "Checking email settings." : email.isError ? "Could not check email alerts; review Settings." : email.data?.deliveryConfigured === false ? "Email delivery is not configured here." : email.data?.enabled && email.data.email ? `Email alerts are set to ${email.data.email}.` : email.data?.email ? "Email alerts are off. Turn them on in Settings to get alerts while you are away." : "Add an email address in Settings to get alerts while you are away."} Checks may be delayed or unavailable.</Row>
                       <Row icon={Lock}>You lock {fmt(quote.collateral, 2)} {quote.asset} ({usd(quote.collateralUsd)}).</Row>

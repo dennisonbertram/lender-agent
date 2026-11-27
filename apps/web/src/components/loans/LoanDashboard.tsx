@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoanCharts } from "@/components/charts";
 import { NetworkChip, PageHeader, Panel, Stat, StatusPill, textClass } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { LoanRisk } from "@/components/fixes/LiveFix";
 import { ProposalCardSlot } from "@/components/chat/ProposalCardSlot";
 import { useSafeNickname, useShell } from "@/components/shell/ShellContext";
@@ -131,6 +132,7 @@ function CloseLoan({ address, loanId, openProposalIds, chatHref, owed, safeName,
           <span className="text-sm text-muted-foreground" aria-hidden>$</span>
           <Input
             aria-label="Amount to repay"
+            data-guide-target="loan-repay"
             inputMode="decimal"
             placeholder="0.0"
             autoComplete="off"
@@ -142,7 +144,7 @@ function CloseLoan({ address, loanId, openProposalIds, chatHref, owed, safeName,
           />
           <Button variant="outline" disabled={repayDisabled} onClick={() => void submitRepayment()}>{retryingUnconfirmed ? "Check repayment status" : "Review repayment"}</Button>
         </div>
-        <Button variant="outline" disabled={close.isPending || !!savedIntent} onClick={() => close.mutate()}>Close this loan</Button>
+        <Button variant="outline" data-guide-target="loan-close" disabled={close.isPending || !!savedIntent} onClick={() => close.mutate()}>Close this loan</Button>
         <Button variant="ghost" render={<Link href={chatHref} />}>Ask the agent</Button>
       </div>
       {valid && (
@@ -200,6 +202,7 @@ export function LoanDashboard({ address, loanId }: { address: string; loanId: st
         sub={<span className="flex flex-wrap items-center gap-x-1.5">Borrowing {l.debt.asset} · {displaySafeName} · <NetworkChip id={l.network} className="px-1.5 py-0" /></span>}
         right={<StatusPill s={s} />}
       />
+      <GuideIntro topicId="loan" />
       <div className="-mt-2 flex flex-col gap-1">
         <AddressText address={safe.address} chainId={l.chainId} label="Safe" showSafeApp className="text-sm" />
         <Freshness m={monitor} chainId={l.chainId} block={l.blockNumber} readAt={l.readAt} failing={!!failing} />
@@ -210,7 +213,7 @@ export function LoanDashboard({ address, loanId }: { address: string; loanId: st
       )}
       <LoanRisk address={address} loanId={l.id} hf={hf} atRisk={l.healthFactor !== null && (s === "risk" || s === "liquidatable")} />
 
-      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-3" data-guide-target="loan-summary">
         <Stat label="Borrowed" value={l.debt.amount === null ? "Debt value unavailable" : `${fmt(l.debt.amount)} ${l.debt.asset}`} sub={l.debt.usd === null ? undefined : usd(l.debt.usd)} />
         <Stat
           label="Collateral"

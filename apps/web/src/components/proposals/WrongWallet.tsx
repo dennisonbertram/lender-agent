@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useDisconnect } from "wagmi";
 import { useSignOut } from "@/client/auth/useSession";
 import { PageHeader } from "@/components/common";
+import { GuideButton } from "@/components/guide/Guide";
 import { ActionBar } from "@/components/ui/action-bar";
 import { Button } from "@/components/ui/button";
 
@@ -23,7 +24,7 @@ export function WrongWallet({ returnTo }: { returnTo?: string }) {
   }, [disconnect, qc, router, returnTo]);
   return (
     <div data-state="wrong_wallet" className="mx-auto flex w-full max-w-[640px] flex-col">
-      <div className="p-4"><PageHeader title="This needs a different wallet" sub="You're connected with a wallet that isn't an owner of this Safe. This plan needs approval from an owner." /></div>
+      <div className="p-4"><PageHeader title="This needs a different wallet" sub="You're connected with a wallet that isn't an owner of this Safe. This plan needs approval from an owner." right={<GuideButton />} /></div>
       <ActionBar
         headline="This needs a different wallet"
         primary={<Button size="xl" onClick={() => void switchWallet()}>Switch wallet</Button>}

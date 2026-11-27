@@ -15,6 +15,7 @@ import { useSignOut } from "@/client/auth/useSession";
 import { describeError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { NetworkChip, PageHeader } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { networkDisplayName } from "@/components/ui/network-mark";
 import { safePaths } from "@/components/shell/Sidebar";
 import { nextLinkOf } from "@/components/proposals/ProposalNext";
@@ -166,6 +167,7 @@ export function ReviewView(props: ReviewViewProps) {
             right={d.pill ? <Badge variant="outline"><span aria-hidden className={cn("size-1.5 rounded-full", DOT[d.tone])} />{d.pill}</Badge> : undefined}
           />
         )}
+        <GuideIntro topicId="proposal" />
         {!wrong && (
           <p data-testid="safe-identity" className="flex flex-wrap items-center gap-x-1 text-sm">
             <AddressText label="Safe" address={safeAddress} chainId={p.chainId} showSafeApp />
@@ -205,7 +207,7 @@ export function ReviewView(props: ReviewViewProps) {
           </section>
         )}
         {!wrong && (
-          <section aria-label="What happens" className="flex flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
+          <section aria-label="What happens" className="flex flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10" data-guide-target="proposal-review">
             {/* The receive/lock rows state the plan; the sentence stays only when there are no rows. */}
             {doneText ? <p className="text-sm">{doneText}</p> : !(rows && rows.length > 0) && <p className="text-sm">{facts?.sentence ?? p.outcome}</p>}
             {rows && rows.length > 0 && <BalanceChanges rows={rows} />}
