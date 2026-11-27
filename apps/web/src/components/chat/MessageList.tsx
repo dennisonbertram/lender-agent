@@ -84,7 +84,14 @@ export function MessageList({ messages, safeAddress, onSend, typing, disabled, o
     if (atBottom.current) setUnseen(false);
   };
   const noteControlInteraction = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest("summary, [aria-expanded]")) atBottom.current = false;
+    if (!(event.target as Element).closest("summary, [aria-expanded]")) return;
+    atBottom.current = false;
+    requestAnimationFrame(() => {
+      const log = box.current;
+      if (!log) return;
+      atBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight <= 80;
+      if (atBottom.current) setUnseen(false);
+    });
   };
   const lastAgentId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
   // Index of the last message that holds a proposal card: a plan sent before it is shown by that card alone.

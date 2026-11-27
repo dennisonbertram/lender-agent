@@ -124,8 +124,13 @@ describe("MessageList follow-the-bottom", () => {
     fireEvent.scroll(log);
   };
   let resize: (() => void) | undefined;
+  let frame: FrameRequestCallback | undefined;
+  const settleFrame = () => act(() => { frame?.(0); frame = undefined; });
   beforeEach(() => {
     resize = undefined;
+    frame = undefined;
+    qc.clear();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1; });
     vi.stubGlobal("ResizeObserver", class {
       constructor(callback: () => void) { resize = callback; }
       observe() {}
@@ -232,7 +237,7 @@ describe("MessageList follow-the-bottom", () => {
   it("does not snap to the bottom when the reader opens an add-funds disclosure", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ address: "0xabc", networks: ["base"], assets: ["ETH"], text: "Send ETH to this Safe." })));
     const addFunds = { id: "funds", role: "assistant", parts: [{ type: "data-block", data: { block: { kind: "addfunds" } } }] } as UIMessage;
-    render(list([msg("old"), addFunds]));
+    render(list([msg("old", "user"), addFunds]));
     const summary = await screen.findByText("Add funds to this Safe");
     const log = screen.getByRole("log");
     const content = log.firstElementChild as HTMLElement;
@@ -240,10 +245,31 @@ describe("MessageList follow-the-bottom", () => {
     act(() => resize?.());
     scrollAway(false);
     fireEvent.click(summary); // Close, then reopen the historical disclosure.
-    fireEvent.click(summary);
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1200 });
     Object.defineProperty(content, "scrollHeight", { configurable: true, value: 700 });
+    settleFrame();
+    fireEvent.click(summary);
+    settleFrame();
     act(() => resize?.());
     expect((log as HTMLElement).scrollTop).toBe(600);
+    expect(screen.queryByRole("button", { name: /New messages/ })).toBeNull();
+  });
+
+  it("re-enables following after a disclosure toggle when the transcript still fits", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ address: "0xabc", networks: ["base"], assets: ["ETH"], text: "Send ETH to this Safe." })));
+    const addFunds = { id: "funds", role: "assistant", parts: [{ type: "data-block", data: { block: { kind: "addfunds" } } }] } as UIMessage;
+    const { rerender } = render(list([msg("old", "user"), addFunds]));
+    const summary = await screen.findByText("Add funds to this Safe");
+    const log = screen.getByRole("log") as HTMLElement;
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 300 });
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(log, "scrollTop", { configurable: true, writable: true, value: 0 });
+    fireEvent.click(summary); // Collapse the disclosure.
+    settleFrame();
+    fireEvent.click(summary); // Expand it again; the short thread still fits.
+    settleFrame();
+    rerender(list([msg("old", "user"), addFunds, msg("next")]));
+    expect(log.scrollTop).toBe(300);
     expect(screen.queryByRole("button", { name: /New messages/ })).toBeNull();
   });
 });
