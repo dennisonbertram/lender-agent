@@ -412,7 +412,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                   </span>
                   <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
                   <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} showBalanceAmount />
-                  {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>
+                  {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" aria-label={openSafeLabel(k)} data-guide-target={!busy && (networkFilter === null || k.openSafeChainIds.includes(networkFilter)) ? "choose-safe" : undefined} disabled={busy} onClick={() => onPick(k.address)}>
                     Open Safe
                   </Button>}
                 </div>

@@ -287,6 +287,32 @@ describe("SafeStep", () => {
     ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     expect(none.container.querySelectorAll('[data-guide-target="choose-safe"]')).toHaveLength(0);
   });
+  it("keeps an out-of-filter recovery Open Safe out of the guide targets", () => {
+    const onPick = vi.fn();
+    const onResume = vi.fn();
+    const onAdd = vi.fn();
+    const arb = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002";
+    const recovery = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0003";
+    const { container } = render(<SafeStep found={[
+      { address: arb, name: "Arbitrum Safe", threshold: 1, ownerCount: 1, chainIds: [42161] },
+    ]} known={[{
+      address: recovery, name: "Pending Safe", pendingSetup: true,
+      chainIds: [8453, 100], pendingChainIds: [100], availableChainIds: [8453], openSafeChainIds: [8453],
+    }]} existing={[]} onPick={onPick} onAdd={onAdd} onResume={onResume} />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    // The recovery card stays visible and openable, but it only opens on Base —
+    // so the first marked Open Safe must be the in-filter Arbitrum tile's.
+    const marked = [...container.querySelectorAll('[data-guide-target="choose-safe"]')];
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toBe(screen.getByRole("button", { name: `Open Safe Arbitrum Safe ${shortAddress(arb)}` }));
+    const recoveryTile = screen.getByText("Pending Safe").closest("li")!;
+    const recoveryOpen = within(recoveryTile).getByRole("button", { name: `Open Safe Pending Safe ${shortAddress(recovery)}` });
+    expect(recoveryOpen.getAttribute("data-guide-target")).toBeNull();
+    expect(within(recoveryTile).getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+    expect(onAdd).not.toHaveBeenCalled();
+  });
   it("labels disclosed token amounts with the networks their balances were read from, never the filter", () => {
     render(<SafeStep found={[{
       address: A, name: "Mixed", threshold: 1, ownerCount: 1, chainIds: [8453, 42161],
