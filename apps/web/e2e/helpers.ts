@@ -2,6 +2,16 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 export const MOCK_SAFE = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0001";
 export const MOCK_EMPTY_SAFE = "0x5afE5AFe5afE5AfE5afe5Afe5AfE5aFe5afE0002";
+
+/** The picker's title for an unnamed Safe: its short address as rendered (`0x5afE…0001`). */
+export const shortAddress = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+/** Open a Safe from the picker: finds that Safe's own card by its visible identity, then presses its Open Safe. */
+export async function openSafe(page: Page, safe: string) {
+  const card = page.getByRole("list", { name: /Safes/ }).getByRole("listitem").filter({ hasText: shortAddress(safe) });
+  await card.getByRole("button", { name: /Open Safe/ }).click();
+}
+
 export const OWNER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 export const COSIGNER = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
 
@@ -16,7 +26,7 @@ export async function useWallet(page: Page, role: Role) {
 /** Connect the dev wallet and sign in (SIWE). Leaves the page on the Safe picker. */
 export async function signIn(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await page.getByRole("button", { name: /Connect wallet|Sign in with wallet/ }).click();
   await expect(page).toHaveURL(/\/onboarding/);
 }
 
@@ -39,7 +49,7 @@ export const safeWallet = {
 /** Sign in as the owner, add the agent on MOCK_SAFE and land on chat. */
 export async function setupChat(page: Page) {
   await signIn(page);
-  await page.getByRole("button", { name: /2 of 2 owners/ }).click();
+  await openSafe(page, MOCK_SAFE);
   await page.getByRole("button", { name: "Add Lender agent" }).click();
   await expect(page).toHaveURL(new RegExp(`/s/${MOCK_SAFE}/chat`, "i"));
   await expect(page.getByRole("main").getByRole("button", { name: "How does this work?" })).toBeVisible();
@@ -80,7 +90,7 @@ export async function sendLoanProposal(page: Page): Promise<string> {
 /** Onboard `safe` as the owner: pick it, add the agent, land on chat. */
 export async function addAgent(page: Page, safe: string) {
   await signIn(page);
-  await page.getByText(safe.slice(0, 6), { exact: false }).first().click();
+  await openSafe(page, safe);
   await page.getByRole("button", { name: "Add Lender agent" }).click();
   await expect(page).toHaveURL(new RegExp(`/s/${safe}/chat`, "i"));
 }

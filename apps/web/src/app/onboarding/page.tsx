@@ -7,7 +7,7 @@ import { useAddSafe, useOwnedSafes, useSafes } from "@/client/safes";
 import { useCreateSafeApi } from "@/client/create-safe";
 import { Spinner } from "@/components/ui/spinner";
 import { StepBar } from "@/components/common";
-import { GuideIntro } from "@/components/guide/Guide";
+import { GuideButton, GuideIntro } from "@/components/guide/Guide";
 import { CreateSafe } from "@/components/onboarding/CreateSafe";
 import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { SafeStep } from "@/components/onboarding/SafeStep";
@@ -54,50 +54,57 @@ function Onboarding() {
   };
   const leaveCreate = () => { setCreating(false); setResume(null); void mine.refetch(); };
 
-  return (
-    <OnboardingCard>
+  if (creating) {
+    return (
+      <OnboardingCard>
         {bar && <StepBar {...bar} />}
-        <GuideIntro topicId={creating ? "create-safe" : "choose-safe"} />
-        {creating ? (
-          <CreateSafe
-            embedded
-            wallet={session.address}
-            api={createApi}
-            resume={resume ?? undefined}
-            resumeDisplayName={resume ? displayName(resume.address, resume.name) : undefined}
-            onProgress={(p) => setCreateStep(p.step)}
-            onCancel={leaveCreate}
-            onCreated={(safe) => router.push(`/onboarding/agent?safe=${safe.address}&path=create`)}
-          />
-        ) : (
-        <SafeStep
+        <GuideIntro topicId="create-safe" />
+        <CreateSafe
+          embedded
           wallet={session.address}
-          onCreate={() => { setResume(null); setCreating(true); }}
-          onUseAnotherWallet={() => void signOut()}
-          found={pickerRows.found}
-          known={pickerRows.known}
-          loading={owned.isLoading}
-          lookupFailed={!!owned.error}
-          savedLoading={mine.isLoading}
-          savedLookupFailed={!!mine.error}
-          createDisabled={mine.isLoading || !!mine.error}
-          existing={mineList.map((s) => s.address)}
-          busy={add.isPending}
-          error={add.error?.message ?? (owned.error ? "We could not look up your Safes. Add one by address." : null)}
-          onPick={pick}
-          onAdd={save}
-          onRetry={() => { void owned.refetch(); void mine.refetch(); }}
-          onResume={openResume}
+          api={createApi}
+          resume={resume ?? undefined}
+          resumeDisplayName={resume ? displayName(resume.address, resume.name) : undefined}
+          onProgress={(p) => setCreateStep(p.step)}
+          onCancel={leaveCreate}
+          onCreated={(safe) => router.push(`/onboarding/agent?safe=${safe.address}&path=create`)}
         />
-        )}
-      {!creating && (
-        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-          Signed in as {shortAddress(getAddress(session.address))} ·{" "}
-          <button type="button" className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={() => void signOut()}>
-            Use another wallet
-          </button>
-        </p>
-      )}
+      </OnboardingCard>
+    );
+  }
+
+  return (
+    <OnboardingCard wide>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        {bar && <div className="min-w-0 max-w-md flex-1"><StepBar {...bar} /></div>}
+        <GuideButton />
+      </div>
+      <GuideIntro topicId="choose-safe" compact />
+      <SafeStep
+        wallet={session.address}
+        onCreate={() => { setResume(null); setCreating(true); }}
+        onUseAnotherWallet={() => void signOut()}
+        found={pickerRows.found}
+        known={pickerRows.known}
+        loading={owned.isLoading}
+        lookupFailed={!!owned.error}
+        savedLoading={mine.isLoading}
+        savedLookupFailed={!!mine.error}
+        createDisabled={mine.isLoading || !!mine.error}
+        existing={mineList.map((s) => s.address)}
+        busy={add.isPending}
+        error={add.error?.message ?? (owned.error ? "We could not look up your Safes. Add one by address." : null)}
+        onPick={pick}
+        onAdd={save}
+        onRetry={() => { void owned.refetch(); void mine.refetch(); }}
+        onResume={openResume}
+      />
+      <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+        Signed in as {shortAddress(getAddress(session.address))} ·{" "}
+        <button type="button" className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={() => void signOut()}>
+          Use another wallet
+        </button>
+      </p>
     </OnboardingCard>
   );
 }

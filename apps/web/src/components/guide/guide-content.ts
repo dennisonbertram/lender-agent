@@ -37,7 +37,7 @@ const CHOOSE_SAFE: GuideTopic = {
   steps: [
     {
       title: "Open one of your Safes",
-      body: 'Choose a card to open that Safe. Funded ones come first and an empty one says to add funds before borrowing. A card shows how many owners must approve when that is known, and "Address and signers" gives the details.',
+      body: 'Choose a card\'s "Open Safe" to open that Safe. Funded ones come first and an empty one says to add funds before borrowing. "Address and signers" gives the owners and how many must approve when that is known.',
       target: "choose-safe",
     },
     {

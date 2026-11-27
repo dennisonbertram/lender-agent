@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createProgressKey } from "@/lib/create-progress";
 import type { ListedSafe } from "@/server/auth/access";
 import OnboardingPage from "./page";
@@ -99,10 +99,11 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     expect(screen.getByText("Holiday")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
+    fireEvent.click(screen.getByRole("button", { name: "Address on Arbitrum" }));
     expect(screen.getByText("Total across Base")).toBeTruthy();
     expect(screen.getByText("Approval details unavailable on Arbitrum.")).toBeTruthy();
     expect(screen.queryByText(/Approvals on Arbitrum/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Holiday.*Open Safe/ }));
+    fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Open Safe" }));
     expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
   });
 
@@ -110,6 +111,7 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [], verifiedChainIds: [10], networks: [] }];
     render(<OnboardingPage />);
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Optimism");
+    fireEvent.click(screen.getByRole("button", { name: "Address and signers" }));
     expect(screen.getByText("Approval details unavailable on Optimism.")).toBeTruthy();
   });
 
@@ -174,6 +176,17 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(screen.getByText("Checking your saved Safes…")).toBeTruthy();
     expect(screen.queryByText(/No Safe found for/)).toBeNull();
     expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("gives Safe selection a wide workspace while the create flow stays in the narrow card", () => {
+    ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
+    render(<OnboardingPage />);
+    expect(document.querySelector(".max-w-7xl")).toBeTruthy();
+    expect(document.querySelector(".max-w-md.bg-card")).toBeNull();
+    fireEvent.click(screen.getByText("Other options"));
+    fireEvent.click(screen.getByRole("button", { name: "Create a new Safe" }));
+    expect(document.querySelector(".max-w-md.bg-card")).toBeTruthy();
+    expect(document.querySelector(".max-w-7xl")).toBeNull();
   });
 
   it("lets the borrower retry a failed saved-Safe lookup instead of treating it as an empty list", () => {
