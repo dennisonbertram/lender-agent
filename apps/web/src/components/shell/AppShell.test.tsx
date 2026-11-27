@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Safe } from "@/lib/types";
 
 let pathname = "/s/0xabc";
@@ -122,6 +122,35 @@ describe("AppShell", () => {
     expect((container.firstElementChild as HTMLElement).className).toMatch(/h-dvh[^"]*overflow-hidden/);
     const aside = container.querySelector("aside") as HTMLElement;
     expect(aside.querySelector("[data-sidebar]")!.className).toContain("overflow-y-auto");
+  });
+  it("resizes to the visible viewport for a soft keyboard without overriding pinch zoom", async () => {
+    mockMedia(() => false);
+    const viewport = new EventTarget() as EventTarget & { height: number; offsetTop: number; scale: number };
+    Object.assign(viewport, { height: 800, offsetTop: 0, scale: 1 });
+    vi.stubGlobal("visualViewport", viewport);
+    const { container } = render(
+      <ShellProvider safe={safe} safes={[safe]} loans={[]} agentOn watching>
+        <AppShell><input aria-label="Message" /></AppShell>
+      </ShellProvider>,
+    );
+    const shellRoot = container.firstElementChild as HTMLElement;
+
+    screen.getByRole("textbox", { name: "Message" }).focus();
+    Object.assign(viewport, { height: 420, offsetTop: 12 });
+    await act(async () => { viewport.dispatchEvent(new Event("resize")); });
+    expect(shellRoot.style.height).toBe("420px");
+    expect(shellRoot.style.top).toBe("12px");
+    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    const sheet = document.querySelector('[data-slot="sheet-content"]') as HTMLElement;
+    expect(sheet.style.height).toBe("357px");
+    expect(sheet.style.bottom).toBe(`${window.innerHeight - 432}px`);
+
+    Object.assign(viewport, { height: 800, offsetTop: 0, scale: 1.5 });
+    await act(async () => { viewport.dispatchEvent(new Event("resize")); });
+    expect(shellRoot.style.height).toBe("");
+    expect(shellRoot.style.top).toBe("");
+    expect(sheet.style.height).toBe("");
+    expect(sheet.style.bottom).toBe("");
   });
   it("shows a persistent test-network strip on Base Sepolia, none on Base", () => {
     mockMedia(() => true);

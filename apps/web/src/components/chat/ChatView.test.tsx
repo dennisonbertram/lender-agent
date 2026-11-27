@@ -114,10 +114,12 @@ describe("ChatView", () => {
     expect(screen.queryByTestId("greeting")).toBeNull();
   });
 
-  it("explains a 403 instead of crashing", async () => {
+  it("explains a 403 instead of crashing and never offers Add Agent", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "no" }), { status: 403 })));
-    render(wrap(<ChatView address="0xabc" />));
+    render(wrap(<ChatView address="0xabc" />, { agentOn: false }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
+    expect(screen.queryByText(/Add the Lender agent to suggest plans/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add the agent/ })).toBeNull();
   });
 
   it("keeps a locked composer in place while loading and after a failed load", async () => {
@@ -148,6 +150,14 @@ describe("ChatView", () => {
     render(wrap(<ChatView address="0xabc" />));
     expect(screen.getByRole("status", { name: "Loading the conversation" })).toBeTruthy();
     expect((screen.getByPlaceholderText("Ask anything, or say how much you need") as HTMLInputElement).disabled).toBe(true);
+    expect(document.querySelector('[data-guide-target="chat-compose"]')).toBeNull();
+  });
+
+  it("exposes the guide target only on the live composer", async () => {
+    thread([]);
+    render(wrap(<ChatView address="0xabc" />));
+    await screen.findByRole("log");
+    expect(screen.getByLabelText("Message").getAttribute("data-guide-target")).toBe("chat-compose");
   });
 
   it("names the network and the Safe under the agent's name, with copy, explorer and Open in Safe", async () => {
@@ -167,6 +177,20 @@ describe("ChatView", () => {
     const setVisibility = (v: "visible" | "hidden") => Object.defineProperty(document, "visibilityState", { configurable: true, get: () => v });
     beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); setVisibility("visible"); });
     afterEach(() => { vi.useRealTimers(); setVisibility("visible"); });
+
+    it("hides the transcript and composer when polling reports revoked Safe ownership", async () => {
+      let denied = false;
+      vi.stubGlobal("fetch", vi.fn(async () => denied
+        ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })
+        : new Response(JSON.stringify({ messages: [m("a1", "private history text")] }), { status: 200 })));
+      render(wrap(<ChatView address="0xabc" />));
+      expect(await screen.findByText("private history text")).toBeTruthy();
+      denied = true;
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
+      expect(screen.queryByText("private history text")).toBeNull();
+      expect(screen.queryByPlaceholderText("Ask anything, or say how much you need")).toBeNull();
+    });
 
     it("shows a server message appended while idle exactly once, and announces it", async () => {
       let stored = [m("a1", "hello")];

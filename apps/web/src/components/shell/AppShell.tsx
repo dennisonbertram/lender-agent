@@ -55,7 +55,9 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
   const [chatDocked, setChatDocked] = useState(true);
   const [chatSheet, setChatSheet] = useState(false);
   const [navSheet, setNavSheet] = useState(false);
+  const [visibleViewport, setVisibleViewport] = useState<{ height: number; bottom: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const showSidebar = useMedia("(min-width: 768px)");
   const showChat = useMedia("(min-width: 1100px)");
   // The page is the chat: no side panel or header button. Addresses in URLs may be lowercased.
@@ -68,6 +70,40 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
   useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [pathname]);
 
+  // Some mobile browsers resize only the visual viewport when the keyboard opens.
+  // Match that viewport at the normal zoom level; leave browser pinch zoom alone.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const shell = shellRef.current;
+    if (!viewport || !shell) return;
+    const syncVisibleViewport = () => {
+      const active = document.activeElement;
+      const isTextEntry = active instanceof HTMLElement && (
+        active.isContentEditable || active.matches("input, textarea, [contenteditable='true']")
+      );
+      const keyboardSized = isTextEntry && window.innerHeight - viewport.height > 80;
+      if (Math.abs(viewport.scale - 1) > 0.01 || !keyboardSized) {
+        shell.style.height = "";
+        shell.style.top = "";
+        setVisibleViewport(null);
+        return;
+      }
+      shell.style.height = `${viewport.height}px`;
+      shell.style.top = `${viewport.offsetTop}px`;
+      const bottom = Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height);
+      setVisibleViewport((previous) => previous?.height === viewport.height && previous.bottom === bottom
+        ? previous
+        : { height: viewport.height, bottom });
+    };
+    syncVisibleViewport();
+    viewport.addEventListener("resize", syncVisibleViewport);
+    viewport.addEventListener("scroll", syncVisibleViewport);
+    return () => {
+      viewport.removeEventListener("resize", syncVisibleViewport);
+      viewport.removeEventListener("scroll", syncVisibleViewport);
+    };
+  }, []);
+
   useEffect(() => setNavSheet(false), [pathname]);
   // Links navigate themselves; the Safe picker's menu items need the router.
   const go = (href: string) => router.push(href);
@@ -76,7 +112,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
   return (
     <TxToastProvider>
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div ref={shellRef} className="relative flex h-dvh flex-col overflow-hidden">
     {chainId !== undefined && isChainId(chainId) && TESTNET_IDS.has(chainId) && (
       <p role="note" className="flex shrink-0 items-center justify-center gap-1.5 border-b border-warning-text/30 bg-warning/15 px-3 py-1 text-xs text-warning-text"><NetworkMark id={chainId} />Test network: {CHAIN_NAME[chainId]}</p>
     )}
@@ -116,7 +152,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
       {!showSidebar && (
         <Sheet open={navSheet} onOpenChange={setNavSheet}>
-          <SheetContent className="h-[85dvh] p-0">
+          <SheetContent className="h-[85dvh] p-0" style={visibleViewport ? { height: `${Math.min(window.innerHeight * 0.85, visibleViewport.height * 0.85)}px`, bottom: `${visibleViewport.bottom}px` } : undefined}>
             <div className="flex items-center justify-between px-3 pt-3">
               <SheetTitle>Menu</SheetTitle>
               <SheetClose render={<Button variant="ghost" size="icon" className="size-11" aria-label="Close menu" />}><X /></SheetClose>
@@ -127,7 +163,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
       )}
       {hasChat && !showChat && (
         <Sheet open={chatSheet && !onChat} onOpenChange={setChatSheet}>
-          <SheetContent className="h-[90dvh] overflow-hidden p-0">
+          <SheetContent className="h-[90dvh] overflow-hidden p-0" style={visibleViewport ? { height: `${Math.min(window.innerHeight * 0.85, visibleViewport.height * 0.9)}px`, bottom: `${visibleViewport.bottom}px` } : undefined}>
             <SheetTitle className="sr-only">Lender agent</SheetTitle>
             {renderChat(() => setChatSheet(false))}
           </SheetContent>

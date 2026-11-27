@@ -115,7 +115,7 @@ describe("MessageList follow-the-bottom", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
   const msg = (id: string, role: "user" | "assistant" = "assistant"): UIMessage => ({ id, role, parts: [{ type: "text", text: `text ${id}` }] }) as UIMessage;
   const qc = new QueryClient();
-  const list = (ms: UIMessage[]) => <QueryClientProvider client={qc}><MessageList messages={ms} safeAddress="0xabc" onSend={() => {}} /></QueryClientProvider>;
+  const list = (ms: UIMessage[], localFollowVersion?: number) => <QueryClientProvider client={qc}><MessageList messages={ms} safeAddress="0xabc" onSend={() => {}} localFollowVersion={localFollowVersion} /></QueryClientProvider>;
   const scrollAway = (up: boolean) => {
     const log = screen.getByRole("log");
     Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1000 });
@@ -151,10 +151,38 @@ describe("MessageList follow-the-bottom", () => {
     expect(screen.queryByText(/New messages/)).toBeNull();
   });
 
-  it("still scrolls down when the reader sends a message", () => {
+  it("does not treat a user message from history polling as a local send", () => {
     const { rerender } = render(list([msg("a")]));
     scrollAway(true);
-    rerender(list([msg("a"), msg("u", "user")]));
+    rerender(list([msg("a"), msg("remote-question", "user")]));
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(100);
+    expect(screen.getByRole("button", { name: /New messages/ })).toBeTruthy();
+  });
+
+  it("still scrolls down when the reader sends a message", () => {
+    const { rerender } = render(list([msg("a")], 0));
+    scrollAway(true);
+    rerender(list([msg("a"), msg("u", "user")], 1));
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
+  });
+
+  it("follows a locally posted plan after an explicit local follow request", () => {
+    const { rerender } = render(list([msg("a")], 0));
+    scrollAway(true);
+    rerender(list([msg("a"), msg("local-plan")], 1));
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
+  });
+
+  it("keeps following after an ordinary action button is clicked", () => {
+    const choices = { id: "choices", role: "assistant", parts: [{ type: "data-block", data: { block: { kind: "suggestions", items: ["Plan this"] } } }] } as UIMessage;
+    render(list([choices]));
+    const content = screen.getByRole("log").firstElementChild as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 500 });
+    act(() => resize?.());
+    scrollAway(false);
+    fireEvent.click(screen.getByRole("button", { name: "Plan this" }));
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 700 });
+    act(() => resize?.());
     expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
   });
 
@@ -175,6 +203,18 @@ describe("MessageList follow-the-bottom", () => {
     Object.defineProperty(content, "scrollHeight", { configurable: true, value: 700 });
     act(() => resize?.());
     expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
+  });
+
+  it("stays pinned when the log viewport gets shorter", () => {
+    render(list([msg("a")]));
+    const log = screen.getByRole("log") as HTMLElement;
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 400, writable: true });
+    act(() => resize?.());
+    scrollAway(false);
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 300, writable: true });
+    act(() => resize?.());
+    expect(log.scrollTop).toBe(1000);
   });
 
   it("ignores passive layout growth while the reader is above the bottom", () => {

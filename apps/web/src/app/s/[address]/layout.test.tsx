@@ -39,6 +39,16 @@ describe("Safe layout error states", () => {
     expect(html).not.toContain("secret page content");
   });
 
+  it("keeps the fallback top bar at the same frame position while loading becomes an error", () => {
+    state.error = null;
+    state.data = undefined;
+    const loading = render(null);
+    const failed = render(new Error("boom"));
+    const framePosition = '</aside><div class="flex min-w-0 flex-1 flex-col"><header';
+    expect(loading).toContain(framePosition);
+    expect(failed).toContain(framePosition);
+  });
+
   it("401: asks to sign in, with a link to /", () => {
     const html = render(new ApiError(401, "unauthorized"));
     expect(html).toContain("Sign in to continue");

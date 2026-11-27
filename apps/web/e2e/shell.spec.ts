@@ -74,11 +74,11 @@ test("long chat follows a late reply and keeps the shell, heading, and composer 
     role: i % 2 ? "assistant" : "user",
     parts: [{ type: "text", text: `Earlier conversation message ${i + 1}. ${"The borrower and lender reviewed the loan details. ".repeat(4)}` }],
   }));
-  let replyAvailable = false;
+  let replyCount = 0;
   await page.route(`**/api/safes/${MOCK_SAFE}/chat`, async (route) => {
-    const messages = replyAvailable
-      ? [...history, { id: "latest-agent-reply", role: "assistant", parts: [{ type: "text", text: "The latest reply arrived after the borrower opened the conversation." }] }]
-      : history;
+    const messages = [...history];
+    if (replyCount > 0) messages.push({ id: "latest-agent-reply", role: "assistant", parts: [{ type: "text", text: "The latest reply arrived after the borrower opened the conversation." }] });
+    if (replyCount > 1) messages.push({ id: "reply-while-reading-back", role: "assistant", parts: [{ type: "text", text: "A second reply arrived while the borrower was reading earlier messages." }] });
     await route.fulfill({ json: { messages } });
   });
   await page.reload();
@@ -90,15 +90,29 @@ test("long chat follows a late reply and keeps the shell, heading, and composer 
   await expect(log.getByText("Earlier conversation message 24.")).toBeVisible();
   await expect(composer).toBeInViewport();
 
-  replyAvailable = true;
+  replyCount = 1;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(log.getByText("The latest reply arrived after the borrower opened the conversation.")).toBeVisible();
   await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThanOrEqual(2);
 
   await log.evaluate((el) => { el.scrollTop = 0; });
-  await expect(log.getByText("Earlier conversation message 1.")).toBeVisible();
+  const earlierMessage = log.getByText("Earlier conversation message 1.");
+  await expect(earlierMessage).toBeInViewport();
+  await expect.poll(() => log.evaluate((el) => el.scrollTop)).toBe(0);
+
+  replyCount = 2;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(log.getByText("A second reply arrived while the borrower was reading earlier messages.")).toBeVisible();
+  const newMessages = page.getByRole("button", { name: /New messages/ });
+  await expect(newMessages).toBeVisible();
   await expect(nav).toBeInViewport();
   await expect(heading).toBeInViewport();
+  await expect(composer).toBeInViewport();
+
+  await newMessages.click();
+  await expect(log.getByText("A second reply arrived while the borrower was reading earlier messages.")).toBeInViewport();
+  await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThanOrEqual(2);
+  await expect(nav).toBeInViewport();
   await expect(composer).toBeInViewport();
 
   const geometry = await page.evaluate(() => ({
@@ -108,5 +122,4 @@ test("long chat follows a late reply and keeps the shell, heading, and composer 
   }));
   expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight);
   expect(geometry.windowScrollY).toBe(0);
-  await expect(log).toHaveJSProperty("scrollTop", 0);
 });

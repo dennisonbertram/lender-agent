@@ -24,18 +24,22 @@ type Props = {
   placement?: ProposalPlacement;
   /** On Get Cash, the docked greeting gives help without introducing a competing loan offer. */
   contextualHelpOnly?: boolean;
+  /** Increments for a message or block initiated in this tab. */
+  localFollowVersion?: number;
 };
 
 const bubble = "max-w-[85%] self-end rounded-2xl bg-chat-user px-3.5 py-2 text-sm text-chat-user-foreground";
 
 /** The thread as a log (r26). Parts: text, tool results (blocks), `data-block`, `data-proposal`, `data-alert`. A tool that errored or has no result yet renders nothing. */
-export function MessageList({ messages, safeAddress, onSend, typing, disabled, onPostBlock, placement, contextualHelpOnly }: Props) {
+export function MessageList({ messages, safeAddress, onSend, typing, disabled, onPostBlock, placement, contextualHelpOnly, localFollowVersion }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const contentHeight = useRef(0);
+  const logHeight = useRef(0);
   const lastId = useRef<string | undefined>(undefined);
   const lastParts = useRef<UIMessage["parts"] | undefined>(undefined);
+  const lastLocalFollowVersion = useRef(localFollowVersion);
   const [unseen, setUnseen] = useState(false);
   const toEnd = () => {
     const log = box.current;
@@ -47,23 +51,30 @@ export function MessageList({ messages, safeAddress, onSend, typing, disabled, o
   useEffect(() => {
     const last = messages[messages.length - 1];
     const changed = last?.id !== lastId.current || last?.parts !== lastParts.current;
-    const sentNow = last?.role === "user" && last.id !== lastId.current;
+    const localFollow = localFollowVersion !== lastLocalFollowVersion.current;
     lastId.current = last?.id;
     lastParts.current = last?.parts;
-    if (atBottom.current || sentNow) toEnd();
+    lastLocalFollowVersion.current = localFollowVersion;
+    if (atBottom.current || localFollow) toEnd();
     else if (changed) setUnseen(true);
-  }, [messages, typing]);
+  }, [messages, typing, localFollowVersion]);
   useEffect(() => {
     const target = content.current;
-    if (!target || typeof ResizeObserver === "undefined") return;
+    const log = box.current;
+    if (!target || !log || typeof ResizeObserver === "undefined") return;
     contentHeight.current = target.scrollHeight;
+    logHeight.current = log.clientHeight;
     const observer = new ResizeObserver(() => {
       const nextHeight = target.scrollHeight;
+      const nextLogHeight = log.clientHeight;
       const grew = nextHeight > contentHeight.current;
+      const viewportShrank = nextLogHeight < logHeight.current;
       contentHeight.current = nextHeight;
-      if (grew && atBottom.current) toEnd();
+      logHeight.current = nextLogHeight;
+      if ((grew || viewportShrank) && atBottom.current) toEnd();
     });
     observer.observe(target);
+    observer.observe(log);
     return () => observer.disconnect();
   }, []);
   const onScroll = () => {
@@ -73,7 +84,7 @@ export function MessageList({ messages, safeAddress, onSend, typing, disabled, o
     if (atBottom.current) setUnseen(false);
   };
   const noteControlInteraction = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest("summary, button, input, select, textarea, [role=button]")) atBottom.current = false;
+    if ((event.target as Element).closest("summary, [aria-expanded]")) atBottom.current = false;
   };
   const lastAgentId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
   // Index of the last message that holds a proposal card: a plan sent before it is shown by that card alone.
