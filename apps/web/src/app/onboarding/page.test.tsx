@@ -70,7 +70,7 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
     expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
-    expect(screen.getByText("$4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
+    expect(screen.getByText("Supported balance $4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: `Open Safe Holiday ${shortAddress(SAFE_A)}` }));
@@ -101,11 +101,14 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(screen.getByText("Holiday")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
     // The balance's real coverage is on the tile face before expanding — under the Arbitrum filter it is not relabeled.
-    expect(screen.getByRole("listitem").textContent).toContain("$4,500 found on Base. Other balances are unavailable.");
+    const safeList = screen.getByRole("list", { name: "Your Safes" });
+    const tileText = within(safeList).getByRole("listitem").textContent ?? "";
+    expect(tileText).toContain("$4,500 found on Base. Other balances are unavailable.");
+    expect(tileText).toContain("Supported balance");
     fireEvent.click(screen.getByRole("button", { name: "Address on Arbitrum" }));
     expect(screen.getByText("Approval details unavailable on Arbitrum.")).toBeTruthy();
     expect(screen.queryByText(/Approvals on Arbitrum/)).toBeNull();
-    fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: `Open Safe Holiday ${shortAddress(SAFE_A)}` }));
+    fireEvent.click(within(within(safeList).getByRole("listitem")).getByRole("button", { name: `Open Safe Holiday ${shortAddress(SAFE_A)}` }));
     expect(push).toHaveBeenCalledWith(`/onboarding/agent?safe=${SAFE_A}`);
   });
 
@@ -180,15 +183,21 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("gives Safe selection a wide workspace while the create flow stays in the narrow card", () => {
+  it("gives Safe selection a full-viewport workspace while the create flow stays in the narrow card", () => {
     ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
     render(<OnboardingPage />);
-    expect(document.querySelector(".max-w-7xl")).toBeTruthy();
+    // Full-viewport shell: the progress bar sits in a page header that carries an
+    // edge-to-edge divider over fluid content — no centered max-width column.
+    const header = document.querySelector("header");
+    expect(header?.className).toMatch(/border-b/);
+    expect(header?.querySelector('nav[aria-label="Onboarding progress"]')).toBeTruthy();
+    expect(document.querySelector("main")).toBeTruthy();
+    expect(document.querySelector(".max-w-7xl")).toBeNull();
     expect(document.querySelector(".max-w-md.bg-card")).toBeNull();
     fireEvent.click(screen.getByText("Other options"));
     fireEvent.click(screen.getByRole("button", { name: "Create a new Safe" }));
+    expect(document.querySelector("header")).toBeNull();
     expect(document.querySelector(".max-w-md.bg-card")).toBeTruthy();
-    expect(document.querySelector(".max-w-7xl")).toBeNull();
   });
 
   it("lets the borrower retry a failed saved-Safe lookup instead of treating it as an empty list", () => {

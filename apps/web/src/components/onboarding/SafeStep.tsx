@@ -1,5 +1,6 @@
 "use client";
 import { useState, type ReactNode } from "react";
+import { ArrowRight } from "lucide-react";
 import { NetworkChip } from "@/components/common";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { usd } from "@/lib/format";
 import { approvalsSummary } from "@/lib/owners";
 import { safeNetworkName } from "@/lib/safe-create";
 import { CHAIN_NAME, type ChainId } from "@/shared/types";
+import { GuideIntro } from "@/components/guide/Guide";
 import { AddSafeForm } from "./AddSafeForm";
 
 export type FoundSafeCard = { address: string; name?: string; threshold: number; ownerCount: number; chainIds: number[]; discoveredChainIds?: number[];
@@ -25,6 +27,13 @@ export type FoundSafeCard = { address: string; name?: string; threshold: number;
 export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[]; openSafeChainIds?: number[]; discovery?: FoundSafeCard };
 
 const SHOWN_OWNERS = 3;
+/** Small text toggles (details disclosures, signer expansion): quiet next to the primary
+    action, still readable and visibly focusable. */
+const quietToggleClass = "rounded-sm underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+/** Both pick lists: fluid auto-fill tracks of at least ~19rem — four-plus columns at
+    1440px, five-plus at 1920px, one on phones — so a lone card keeps its natural size
+    instead of stretching and none is squeezed below the track minimum. */
+const gridClass = "grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3 has-[[aria-expanded=true]]:items-start";
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const amountText = (n: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: n < 1 ? 4 : 2 }).format(n);
 /** The tile's title: its name, or the short address so identical unnamed Safes stay distinct. */
@@ -50,9 +59,9 @@ function Signers({ owners, wallet, chainId }: { owners: { address: string; ens?:
             {you(o.address) ? "You" : o.ens || formatAddress(o.address)}
           </span>
         ))}
-        {!open && more > 0 && <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setOpen(true)}>and {more} more</button>}
-        {!open && more === 0 && <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setOpen(true)}>Show addresses</button>}
-        {open && <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setOpen(false)}>Hide addresses</button>}
+        {!open && more > 0 && <button type="button" className={quietToggleClass} onClick={() => setOpen(true)}>and {more} more</button>}
+        {!open && more === 0 && <button type="button" className={quietToggleClass} onClick={() => setOpen(true)}>Show addresses</button>}
+        {open && <button type="button" className={quietToggleClass} onClick={() => setOpen(false)}>Hide addresses</button>}
       </span>
       {open && (
         <ul className="flex flex-col gap-0.5">
@@ -79,7 +88,7 @@ function CardDetails({ address, chainId, owners, wallet, label = "Address and si
   const [open, setOpen] = useState(false);
   return (
     <span className="flex flex-col gap-1 text-xs">
-      <button type="button" aria-expanded={open} className="inline-flex min-h-8 w-fit items-center text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={() => setOpen((v) => !v)}>
+      <button type="button" aria-expanded={open} className={cn("inline-flex min-h-8 w-fit items-center text-muted-foreground", quietToggleClass)} onClick={() => setOpen((v) => !v)}>
         {label}
       </button>
       {open && (
@@ -146,6 +155,37 @@ function hasCompleteBalanceCoverage(safe: FoundSafeCard) {
   return safe.chainIds.every((id) => balanceChainIds.includes(id));
 }
 
+function supportedBalanceAmount(value: number) {
+  if (value > 0 && value < 0.01) return "under $0.01";
+  return usd(value, value > 0 && value < 1 ? 2 : 0);
+}
+
+function supportedBalanceDetails(safe: FoundSafeCard) {
+  if (safe.balanceUsd === undefined) return "Balance unavailable";
+  const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
+  const networks = balanceChainIds.map(chainChipId).join(" and ");
+  const complete = hasCompleteBalanceCoverage(safe);
+  const hasPositiveAsset = safe.assets?.some((asset) => asset.amount > 0) ?? false;
+  if (safe.balanceUsd === 0 && !hasPositiveAsset && complete) return "No supported funds found.";
+  if (!complete) return `found on ${networks || "the reported networks"}. Other balances are unavailable.`;
+  if (balanceChainIds.length > 1) return `Total across ${networks}`;
+  return "";
+}
+
+function supportedBalanceSummary(safe: FoundSafeCard, includeSingleNetwork = false) {
+  if (safe.balanceUsd === undefined) return "Supported balance unavailable.";
+  const details = supportedBalanceDetails(safe);
+  if (details === "No supported funds found.") return details;
+  const amount = supportedBalanceAmount(safe.balanceUsd);
+  if (details.startsWith("found on ")) return `Supported balance ${amount} ${details}`;
+  if (details.startsWith("Total across ")) return `Supported balance ${amount}. ${details}`;
+  if (includeSingleNetwork) {
+    const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
+    if (balanceChainIds.length === 1) return `Supported balance ${amount} on ${chainChipId(balanceChainIds[0])}`;
+  }
+  return `Supported balance ${amount}`;
+}
+
 /** The networks ownership is verified on, as names with their marks — or the honest fallback. */
 function VerifiedNetworks({ ids }: { ids: number[] }) {
   return ids.length > 0 ? (
@@ -172,19 +212,16 @@ function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wal
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   const balanceChainIds = safe ? safe.balanceChainIds ?? safe.chainIds : [];
   const hasDistinctBalanceCoverage = safe && verifiedChainIds.length > 1;
+  const balanceSummary = safe && showBalanceAmount ? supportedBalanceSummary(safe, true) : undefined;
   const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   const detailsLabel = detailsToggleLabel(content, name, verifiedChainIds, selectedChainId);
   return (
     <div className="flex flex-col gap-1.5">
       {showVerified && <VerifiedNetworks ids={verifiedChainIds} />}
       {showApproval && <span className="text-xs text-muted-foreground">{approvalLabel(safe, verifiedChainIds, selectedChainId)}</span>}
-      {(showBalanceAmount || hasDistinctBalanceCoverage) && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">
-        {showBalanceAmount
-          ? hasCompleteBalanceCoverage(safe)
-            ? `${usd(safe.balanceUsd)} ${balanceChainIds.length === 1 ? "on" : "across"} ${balanceChainIds.map(chainChipId).join(" and ")}`
-            : `${usd(safe.balanceUsd)} found on ${balanceChainIds.map(chainChipId).join(" and ")}. Other balances are unavailable.`
-          : `Total across ${balanceChainIds.map(chainChipId).join(" and ")}`}
-      </span>}
+      {(showBalanceAmount || hasDistinctBalanceCoverage) && safe && (showBalanceAmount
+        ? <span className="text-xs text-muted-foreground">{balanceSummary}</span>
+        : balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>)}
       <CardDetails address={address} chainId={detailChainId} owners={owners} wallet={wallet} label={detailsLabel} />
     </div>
   );
@@ -196,30 +233,30 @@ function TileActions({ action, label, children }: { action: ReactNode; label: st
   const [open, setOpen] = useState(false);
   return (
     <>
-      <div className="flex items-center gap-2 px-3 pb-3">
+      <div className="flex items-center gap-2 px-4 pb-3">
         {action}
         <button
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="ml-auto inline-flex min-h-8 items-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className={cn("ml-auto inline-flex min-h-8 items-center text-xs text-muted-foreground", quietToggleClass)}
         >
           {label}
         </button>
       </div>
-      {open && <div className="flex flex-col gap-1.5 border-t border-border px-3 py-2.5 text-xs text-muted-foreground">{children}</div>}
+      {open && <div className="flex flex-col gap-1.5 border-t border-border px-4 py-3 text-xs text-muted-foreground">{children}</div>}
     </>
   );
 }
 
-const tileClass = "flex min-w-0 flex-col rounded-xl bg-card ring-1 ring-foreground/10 transition-colors hover:bg-muted/50";
+const tileClass = "flex min-w-0 flex-col rounded-xl bg-card ring-1 ring-foreground/10";
 const tileTitleClass = "min-w-0 text-sm font-medium leading-5 [overflow-wrap:anywhere]";
 
-/** A tile's identity: the title with the short address beside it whenever the title is a
-    name — same-named Safes stay distinguishable; unnamed ones need no second copy. */
+/** A tile's identity: the title line with the short address on a second line whenever the
+    title is a name — same-named Safes stay distinguishable; unnamed ones need no second copy. */
 function TileTitle({ safe }: { safe: { name?: string; address: string } }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+    <span className="flex min-w-0 flex-col gap-0.5">
       <span className={tileTitleClass}>{safeTitle(safe)}</span>
       {safe.name && <span className="min-w-0 text-xs font-normal tabular-nums text-muted-foreground">{shortAddress(safe.address)}</span>}
     </span>
@@ -239,30 +276,27 @@ function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
   const { threshold, ownerCount } = resolveApprovalSnapshot(s, s.chainIds, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   const balanceChainIds = s.balanceChainIds ?? s.chainIds;
+  const balanceDetails = supportedBalanceDetails(s);
   const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   return (
     <li className={tileClass}>
-      <div className="flex flex-1 flex-col gap-1.5 p-3">
+      <div className="flex flex-1 flex-col gap-1.5 p-4">
         <TileTitle safe={s} />
-        {s.balanceUsd === undefined ? (
-          <span className="text-xs text-muted-foreground">Balance unavailable</span>
-        ) : !hasCompleteBalanceCoverage(s) ? (
-          <span className="text-xs text-muted-foreground">
-            <span className="text-base font-semibold tabular-nums text-foreground">{usd(s.balanceUsd)}</span>{" "}
-            found on {s.balanceChainIds?.length ? s.balanceChainIds.map(chainChipId).join(" and ") : "the reported networks"}. Other balances are unavailable.
-          </span>
-        ) : s.balanceUsd === 0 ? (
-          <span className="text-sm text-warning-text">Empty. Add funds before borrowing.</span>
-        ) : (
-          <span className="text-lg font-semibold tabular-nums">{usd(s.balanceUsd)}</span>
-        )}
-        {s.balanceUsd !== undefined && hasCompleteBalanceCoverage(s) && balanceChainIds.length > 1 && (
-          <span className="text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>
-        )}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-xs text-muted-foreground">Supported balance</span>{" "}
+          {s.balanceUsd === undefined ? (
+            <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
+          ) : (
+            <span className="text-lg font-semibold tabular-nums">{supportedBalanceAmount(s.balanceUsd)}</span>
+          )}
+        </div>
+        {s.balanceUsd !== undefined && balanceDetails && <span className={cn("-mt-1 text-xs", balanceDetails === "No supported funds found." ? "text-warning-text" : "text-muted-foreground")}>
+          {" "}{balanceDetails}
+        </span>}
         <VerifiedNetworks ids={s.chainIds} />
       </div>
       <TileActions
-        action={<Button size="sm" aria-label={openSafeLabel(s)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(s.address)}>Open Safe</Button>}
+        action={<Button size="sm" aria-label={openSafeLabel(s)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(s.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
         label={detailsToggleLabel(content, name, s.chainIds, selectedChainId)}
       >
         <span>{approvalLabel(s, s.chainIds, selectedChainId)}</span>
@@ -290,13 +324,13 @@ function SavedTile({ safe: k, wallet, selectedChainId, busy, onPick }: {
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   return (
     <li className={tileClass}>
-      <div className="flex flex-1 flex-col gap-1.5 p-3">
+      <div className="flex flex-1 flex-col gap-1.5 p-4">
         <TileTitle safe={k} />
         <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
         <VerifiedNetworks ids={verified} />
       </div>
       <TileActions
-        action={<Button size="sm" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>Open Safe</Button>}
+        action={<Button size="sm" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
         label={detailsToggleLabel("address", name, verified, selectedChainId)}
       >
         <span>{approvalLabel(undefined, verified, selectedChainId)}</span>
@@ -361,22 +395,32 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
   const hasPendingSetup = pendingKnown.length > 0;
   return (
     <>
-      <h1 tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none">{hasPendingSetup ? "Finish setting up your Safe" : visibleFound.length > 0 ? "Choose a Safe" : "Your Safe"}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        <h1 tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none sm:text-3xl">{hasPendingSetup ? "Finish setting up your Safe" : visibleFound.length > 0 ? "Choose a Safe" : "Your Safe"}</h1>
+        {!adding && (networks.length > 1 || networkFilter !== null) && <fieldset className="flex min-w-0 flex-col gap-2">
+          <legend className="text-xs font-medium text-muted-foreground">Show Safes on</legend>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" aria-pressed={networkFilter === null} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === null ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(null)}><NetworkChip id="All networks" className="rounded-none border-0 px-0 py-0 text-current" /></button>
+            {networks.map((network) => <button key={network} type="button" aria-pressed={networkFilter === network} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === network ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(network)}><NetworkChip id={chainChipId(network)} className="rounded-none border-0 px-0 py-0 text-current" /></button>)}
+          </div>
+        </fieldset>}
+      </div>
+      <GuideIntro topicId="choose-safe" compact />
       {empty && (
-        <p className="text-sm">
+        <p className="max-w-2xl text-sm">
           {wallet ? <>No Safe found for <AddressText address={wallet} />. </> : "No Safe found for this wallet. "}
           Is this the wallet you use for your Safe? If not, use another wallet. You can also create a new Safe or add one you own by its address.
         </p>
       )}
       {lookupFailed && !adding && (
-        <div className="flex flex-col gap-2">
+        <div className="flex w-full max-w-md flex-col gap-2">
           <p className="text-sm">We could not look up your Safes. Try again, or use one you saved before.</p>
           {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
         </div>
       )}
       {savedBusy && !adding && <p role="status" className="text-xs text-muted-foreground">Checking your saved Safes…</p>}
       {savedFailed && !adding && !lookupFailed && (
-        <div className="flex flex-col gap-2">
+        <div className="flex w-full max-w-md flex-col gap-2">
           <p className="text-sm">We could not load your saved Safes. Retry to check for a setup you can continue.</p>
           {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
         </div>
@@ -384,25 +428,20 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
       {loading && <p className="text-xs text-muted-foreground">Looking for your Safes…</p>}
       {!adding && (
         <>
-        {(networks.length > 1 || networkFilter !== null) && <fieldset className="flex flex-col gap-2">
-          <legend className="text-xs font-medium text-muted-foreground">Show Safes on</legend>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" aria-pressed={networkFilter === null} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === null ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(null)}><NetworkChip id="All networks" className="rounded-none border-0 px-0 py-0 text-current" /></button>
-            {networks.map((network) => <button key={network} type="button" aria-pressed={networkFilter === network} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === network ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(network)}><NetworkChip id={chainChipId(network)} className="rounded-none border-0 px-0 py-0 text-current" /></button>)}
-          </div>
-        </fieldset>}
         {networkFilter !== null && visibleFound.length === 0 && visibleKnown.length === 0 && <p className="text-sm">{hasUnknownNetwork
           ? <>No Safes with reported network information found on {chainChipId(networkFilter)}. Choose All networks to review Safes whose network is unavailable.</>
           : <>No Safes found on {chainChipId(networkFilter)}.</>}</p>}
+        {(pendingKnown.length > 0 || visibleFound.length > 0 || savedKnown.length > 0) && (
+        <div className={gridClass}>
         {pendingKnown.length > 0 && (
-        <ul aria-label="Finish setting up" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul role="list" aria-label="Finish setting up" className="contents">
           {pendingKnown.map((k) => (
             <li key={k.address} className={tileClass}>
               {(() => {
                 const pending = k.pendingChainIds ?? k.chainIds ?? [];
                 const done = (k.chainIds ?? []).filter((c) => !pending.includes(c));
                 return (
-                <div className="flex flex-col gap-1.5 p-3">
+                <div className="flex flex-col gap-1.5 p-4">
                   <TileTitle safe={k} />
                   {networkFilter !== null && !k.availableChainIds?.includes(networkFilter) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
                   <span className="text-xs text-muted-foreground">
@@ -413,7 +452,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                   <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
                   <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} showBalanceAmount />
                   {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" aria-label={openSafeLabel(k)} data-guide-target={!busy && (networkFilter === null || k.openSafeChainIds.includes(networkFilter)) ? "choose-safe" : undefined} disabled={busy} onClick={() => onPick(k.address)}>
-                    Open Safe
+                    Open Safe <ArrowRight data-icon="inline-end" aria-hidden />
                   </Button>}
                 </div>
                 );
@@ -423,7 +462,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
         </ul>
         )}
         {(visibleFound.length > 0 || savedKnown.length > 0) && (
-        <ul aria-label="Your Safes" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul role="list" aria-label="Your Safes" className="contents">
           {visibleFound.map((s) => (
             <FoundTile key={s.address} safe={s} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
           ))}
@@ -432,20 +471,22 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
           ))}
         </ul>
         )}
+        </div>
+        )}
         </>
       )}
       {adding ? (
         <AddSafeForm existing={existing} busy={busy} serverError={error} onSubmit={onAdd} onCancel={() => setAdding(false)} />
       ) : visibleFound.length > 0 ? (
-        <details className="rounded-lg border border-border px-3 py-2">
-          <summary className="cursor-pointer text-sm text-muted-foreground">Other options</summary>
+        <details className="w-full max-w-md rounded-lg border border-border px-3 py-2">
+          <summary className="cursor-pointer rounded-sm text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">Other options</summary>
           <div className="mt-2 flex flex-col gap-2">
             {onCreate && <Button size="lg" variant="outline" disabled={createDisabled} onClick={onCreate}>Create a new Safe</Button>}
             <Button size="lg" variant="outline" onClick={() => setAdding(true)}>Add by address</Button>
           </div>
         </details>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex w-full max-w-md flex-col gap-2">
           {empty && onUseAnotherWallet && <Button size="lg" onClick={onUseAnotherWallet}>Use another wallet</Button>}
           {onCreate && <Button size="lg" disabled={createDisabled} variant={none && !(empty && onUseAnotherWallet) ? "default" : "outline"} onClick={onCreate}>Create a new Safe</Button>}
           <Button size="lg" variant="outline" onClick={() => setAdding(true)}>Add by address</Button>

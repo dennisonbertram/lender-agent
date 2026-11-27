@@ -162,7 +162,29 @@ export const SentLine = ({ children }: { children: ReactNode }) => (
   <p role="status" className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm"><Check className="mt-0.5 size-4 shrink-0 text-success" />{children}</p>
 );
 
-export function StepBar({ labels, step, complete = false }: { labels: string[]; step: number; complete?: boolean }) {
+export function StepBar({ labels, step, complete = false, variant = "default" }: { labels: string[]; step: number; complete?: boolean; variant?: "default" | "picker" }) {
+  if (variant === "picker") {
+    return (
+      <nav aria-label="Onboarding progress" data-slot="step-bar" className="w-fit max-w-full min-w-0">
+        <ol className="flex max-w-full min-w-0 items-center gap-1.5">
+          {labels.map((l, i) => {
+            const state = segmentState(i, step, complete);
+            return (
+              <li key={l} className="flex min-w-0 shrink items-center gap-1.5">
+                <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold", state === "done" ? "bg-success/15 text-success-text" : state === "current" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                  {state === "done" ? <Check className="size-3" /> : i + 1}
+                </span>
+                <span aria-current={state === "current" ? "step" : undefined} className={cn("min-w-0 text-xs leading-tight break-words", state === "done" ? "font-medium text-success-text" : state === "current" ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                  {l}
+                </span>
+                {i < labels.length - 1 && <span aria-hidden className={cn("h-px w-3 shrink-0 sm:w-5", state === "done" ? "bg-success/50" : "bg-border")} />}
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+    );
+  }
   return (
     <nav aria-label="Onboarding progress" data-slot="step-bar" className="flex items-start gap-1.5 sm:gap-2">
       {labels.map((l, i) => {

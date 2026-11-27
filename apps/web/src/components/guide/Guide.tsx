@@ -627,32 +627,36 @@ export function GuideIntro({ topicId, compact = false }: { topicId?: string; com
   if (guide.hideIntros || guide.seenTopics.has(id)) return null;
   if (compact) {
     // Inline form for screens whose own heading already carries the topic's title:
-    // summary, walkthrough and device-wide hide only — no second card, no second title.
+    // a quiet sentence with the walkthrough link and the device-wide hide grouped
+    // into one unbreakable run, so they drop to the next line together. No second
+    // card or title. Coarse-pointer targets reserve their height in the line, and
+    // the walkthrough target stays within its own button.
     return (
       <aside
         role="note"
         aria-label={`${topic.title} — guide`}
-        className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-muted/50 px-4 py-3 ring-1 ring-foreground/5"
+        className="text-sm text-muted-foreground"
         onKeyDown={(e) => {
           if (e.key === "Escape") guide.dismissIntros();
         }}
       >
-        <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <p className="min-w-0 flex-1 basis-56 text-sm text-muted-foreground">{topic.summary}</p>
-        <span className="flex shrink-0 items-center gap-1">
-          <Button size="sm" onClick={(e) => guide.open(id, e.currentTarget)}>
-            Walk through the steps
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Hide automatic introductions on this device"
-            title="Hide every automatic guide on this device — the Guide button still opens any guide"
-            onClick={guide.dismissIntros}
-          >
-            <X />
-          </Button>
-        </span>
+        <p>
+          {topic.summary}{" "}
+          <span className="inline-flex items-center gap-1 pointer-coarse:min-h-11">
+            <Button variant="link" size="inline" className="pointer-coarse:py-3 pointer-coarse:after:inset-y-0" onClick={(e) => guide.open(id, e.currentTarget)}>
+              Walk through the steps
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Hide automatic introductions on this device"
+              title="Hide every automatic guide on this device — the Guide button still opens any guide"
+              onClick={guide.dismissIntros}
+            >
+              <X />
+            </Button>
+          </span>
+        </p>
       </aside>
     );
   }
