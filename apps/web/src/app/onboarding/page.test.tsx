@@ -99,8 +99,9 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     expect(screen.getByText("Holiday")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
+    // The balance's real coverage is on the tile face before expanding — under the Arbitrum filter it is not relabeled.
+    expect(screen.getByRole("listitem").textContent).toContain("$4,500 found on Base. Other balances are unavailable.");
     fireEvent.click(screen.getByRole("button", { name: "Address on Arbitrum" }));
-    expect(screen.getByText("Total across Base")).toBeTruthy();
     expect(screen.getByText("Approval details unavailable on Arbitrum.")).toBeTruthy();
     expect(screen.queryByText(/Approvals on Arbitrum/)).toBeNull();
     fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Open Safe" }));
