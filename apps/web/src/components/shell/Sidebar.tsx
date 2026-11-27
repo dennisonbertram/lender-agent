@@ -7,6 +7,7 @@ import { attentionCounts, attentionLine } from "@/lib/loan-copy";
 import { AgentWatchStatus } from "@/components/agent/AgentWatchStatus";
 import { pickerLine } from "@/lib/watch-copy";
 import { WalletMenu } from "@/components/wallet/WalletMenu";
+import { GuideButton } from "@/components/guide/Guide";
 import { shortAddress } from "@/lib/address";
 import { AddressText } from "@/components/ui/address";
 import { SafeIdentity as SharedSafeIdentity } from "@/components/ui/safe-identity";
@@ -194,6 +195,7 @@ export function Sidebar({ safe, safes, statusesBySafe, chainId, loans, loansErro
         <Item href={p.activity} active={at(p.activity)}><Activity className="size-4" /> Activity</Item>
         <Item href={p.settings} active={at(p.settings)}><Settings className="size-4" /> Settings</Item>
         {userLabel && <WalletMenu userLabel={userLabel} userAddress={userAddress} safe={safe.address} chainId={chainId} ownedChainIds={ownedChainIds} onSignOut={onSignOut} />}
+        <GuideButton />
       </div>
     </div>
   );

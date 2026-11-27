@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Wallet } from "lucide-react";
 import { useAccount, useConnect } from "wagmi";
 import { useSession } from "@/client/auth/useSession";
+import { GuideIntro } from "@/components/guide/Guide";
 import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { shortAddress } from "@/lib/address";
 
@@ -90,7 +91,7 @@ export function SignInCard({ returning = false, presentation = "default", classN
             The money you borrow arrives in your Safe as USDC — digital dollars. Sending it to a bank account is a separate transfer.
           </p>
         )}
-        <button type="button" className={buttonClass} disabled={busy} aria-describedby={!isConnected && noWallet ? "no-wallet-note" : undefined} aria-expanded={isConnected ? undefined : choosing} onClick={() => {
+        <button type="button" className={buttonClass} data-guide-target="sign-in" disabled={busy} aria-describedby={!isConnected && noWallet ? "no-wallet-note" : undefined} aria-expanded={isConnected ? undefined : choosing} onClick={() => {
           if (!walletReady || authPending) return;
           if (isConnected) { void signIn().catch(() => {}); return; }
           if (noWallet) { checkAgain(); return; }
@@ -135,5 +136,5 @@ export function SignInCard({ returning = false, presentation = "default", classN
   );
 
   if (presentation === "hero") return <div className={className} id={id}>{content}</div>;
-  return <OnboardingCard>{content}</OnboardingCard>;
+  return <OnboardingCard>{content}{returning && <GuideIntro topicId="welcome" />}</OnboardingCard>;
 }

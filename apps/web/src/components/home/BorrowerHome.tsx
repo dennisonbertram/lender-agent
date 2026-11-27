@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { SignInCard } from "@/components/auth/SignInCard";
+import { GuideButton, GuideIntro } from "@/components/guide/Guide";
 import styles from "./borrower-home.module.css";
 
 const steps = [
@@ -35,6 +36,7 @@ export function BorrowerHome() {
           <nav className={styles.nav} aria-label="Main navigation">
             <a href="#how-it-works">How it works <ArrowDownRight aria-hidden="true" /></a>
             <a className={styles.navAction} href="#get-started">Get started <ArrowUpRight aria-hidden="true" /></a>
+            <GuideButton />
           </nav>
         </header>
 
@@ -43,6 +45,7 @@ export function BorrowerHome() {
             <h1 id="hero-title">Borrow against<br /><em>your crypto.</em></h1>
             <p className={styles.intro}>Borrow digital dollars (USDC) in your Safe, a wallet whose owners approve transactions. Before you approve, see the estimated interest and when your collateral could be sold. Moving money to a bank is a separate step.</p>
             <SignInCard presentation="hero" className={styles.signIn} id="get-started" />
+            <GuideIntro topicId="welcome" />
           </div>
           <figure className={styles.heroArt}>
             <Image

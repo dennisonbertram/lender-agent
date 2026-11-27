@@ -1,5 +1,6 @@
 "use client";
 import { PageHeader } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { chainName, useAddAgent, useAddNetwork, useAgentStatus, useRemoveAgent } from "@/client/agent";
 import { networkRows, servedNetworks } from "@/lib/networks";
 import { useLoans, useSaveLevels } from "@/client/loans";
@@ -38,6 +39,7 @@ export function SettingsView({ address }: { address: string }) {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <PageHeader title="Settings" />
+      <GuideIntro topicId="settings" />
       <SafeIdentity safe={safe} />
       <SafeNicknameEditor key={`${walletAddress?.toLowerCase() ?? "no-wallet"}:${safe.address.toLowerCase()}`} address={safe.address} safeName={safe.name} nickname={safeNickname(safe.address)} enabled={!!walletAddress} setSafeNickname={setSafeNickname} />
       <div className="rounded-xl border border-edge p-3">

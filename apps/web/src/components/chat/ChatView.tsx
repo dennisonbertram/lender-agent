@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Composer } from "@/components/chat/Composer";
 import type { ProposalPlacement } from "@/components/chat/ProposalCardSlot";
 import { MessageList } from "@/components/chat/MessageList";
+import { GuideIntro } from "@/components/guide/Guide";
 import { ReserveStatusChip } from "@/components/common";
 import { useShell } from "@/components/shell/ShellContext";
 import type { UIBlock } from "@/lib/blocks";
@@ -142,6 +143,7 @@ export function ChatView({ address }: { address: string }) {
           <SafeLine />
         </div>
       </div>
+      <GuideIntro topicId="chat" />
       <ChatBody address={address} placeholder="Ask anything, or say how much you need" />
     </div>
   );

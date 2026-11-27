@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar, SafePicker, safePaths } from "./Sidebar";
 import { TxToastProvider } from "@/components/wallet/TxToasts";
+import { GuideButton } from "@/components/guide/Guide";
 import { primaryChain, useShell } from "./ShellContext";
 import { CHAIN_IDS, CHAIN_NAME, isChainId } from "@/shared/types";
 import { NetworkMark } from "@/components/ui/network-mark";
@@ -90,6 +91,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
             <Button variant="ghost" size="icon" aria-label="Menu" onClick={() => setNavSheet(true)}><Menu /></Button>
           )}
           {!showSidebar && <SafePicker compact safe={safe} safes={safes} statusesBySafe={statusesBySafe} chainId={chainId} onNavigate={go} />}
+          {!showSidebar && <GuideButton />}
           {!showChat && risk > 0 && (
             <Link href={riskHref} className="ml-auto shrink-0"><Badge variant="destructive" className="h-6 gap-1"><TriangleAlert className="size-3.5" aria-hidden />{risk === 1 ? "1 loan needs action" : `${risk} loans need action`}</Badge></Link>
           )}

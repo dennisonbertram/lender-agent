@@ -78,7 +78,7 @@ export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networ
       <p className="text-xs text-muted-foreground">It approves a permission, not a payment. You can remove it anytime in Settings.</p>
       {done && canChat && onOpenChat && <Button size="lg" onClick={onOpenChat}>Open chat</Button>}
       {!done && networks.length === 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" data-guide-target="agent-permissions">
           {!canChat && !ownsEligibleNetwork ? (
             <p className="text-sm">This wallet is not an owner of this Safe on a deployed Base or Arbitrum network. Switch to a wallet that is, or choose another Safe.</p>
           ) : otherNetworks.length > 0 ? (
@@ -92,7 +92,7 @@ export function AgentStep({ safeName, safeAddress, chainId, agentAddress, networ
         </div>
       )}
       {!done && networks.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" data-guide-target="agent-permissions">
           {busy && progress && (
             <p role="status" className="flex flex-wrap items-center gap-1 text-sm">Confirm in your wallet: <NetworkChip id={progress.network} className="px-1.5 py-0" />, {progress.n} of {progress.total}.</p>
           )}

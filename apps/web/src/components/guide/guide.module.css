@@ -1,0 +1,27 @@
+/* The outline the guide adds to a real on-page control it is pointing at. It sits on the element,
+   so it is removed with the class even if the element re-renders later. */
+.spotlight {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: var(--radius-md, 8px);
+  animation: guide-spot-pulse 1.2s ease-out 2;
+}
+
+@keyframes guide-spot-pulse {
+  0% {
+    outline-offset: 10px;
+    outline-color: transparent;
+  }
+  40% {
+    outline-color: var(--ring);
+  }
+  100% {
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spotlight {
+    animation: none;
+  }
+}

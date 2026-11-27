@@ -472,7 +472,7 @@ export function CreateSafe({ wallet, api, onCreated, onCancel, embedded = false,
       ) : (
         <div className="flex gap-2">
           {step > 0 ? <Button size="lg" type="button" variant="ghost" onClick={() => setStep(step - 1)}>Back</Button> : onCancel && <Button size="lg" type="button" variant="ghost" onClick={leave}>Back</Button>}
-          <Button size="lg" type="submit" className="flex-1" disabled={step === 2 && !preview && usable.length > 0}>{step === 2 ? "Create Safe" : "Next"}</Button>
+          <Button size="lg" type="submit" className="flex-1" data-guide-target={step === 2 ? "create-safe" : undefined} disabled={step === 2 && !preview && usable.length > 0}>{step === 2 ? "Create Safe" : "Next"}</Button>
         </div>
       )}
     </form>

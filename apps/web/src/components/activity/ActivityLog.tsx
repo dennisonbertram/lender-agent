@@ -7,6 +7,7 @@ import { SafeIdentity } from "@/components/settings/SafeIdentity";
 import { safeTxLink } from "@/server/safe/links";
 import type { Address, ChainId, Hex } from "@/shared/types";
 import { NetworkChip, PageHeader } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { useShell } from "@/components/shell/ShellContext";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableHeadRow, TableRow } from "@/components/ui/table";
 import { timeLabel } from "@/lib/activity-copy";
@@ -26,8 +27,9 @@ export function ActivityLog() {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <PageHeader title="Activity" sub="What the agent, you and co-signers did in this Safe" />
+      <GuideIntro topicId="activity" />
       <SafeIdentity safe={safe} />
-      <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
+      <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10" data-guide-target="activity-list">
         {error ? (
           <ErrorBody error={error} retry={() => void refetch()} safeAddress={safe.address} />
         ) : isPending ? (

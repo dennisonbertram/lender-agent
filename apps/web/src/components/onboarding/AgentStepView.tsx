@@ -9,6 +9,7 @@ import { AddressText } from "@/components/ui/address";
 import { StateMessage } from "@/components/ui/state-message";
 import { AgentStep } from "./AgentStep";
 import { OnboardingCard } from "./OnboardingCard";
+import { GuideIntro } from "@/components/guide/Guide";
 import { useSafeNicknameNames } from "./useSafeNicknameNames";
 
 /** Wires the agent step to the server: signatures, read-back, then on to the chat. */
@@ -67,6 +68,7 @@ export function AgentStepView({ safeAddress, createPath }: { safeAddress: string
   }
   return (
     <OnboardingCard>
+      <GuideIntro topicId="agent" />
       <AgentStep
         safeName={safeName}
         safeAddress={safeAddress}

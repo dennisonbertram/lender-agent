@@ -7,6 +7,7 @@ import { useAddSafe, useOwnedSafes, useSafes } from "@/client/safes";
 import { useCreateSafeApi } from "@/client/create-safe";
 import { Spinner } from "@/components/ui/spinner";
 import { StepBar } from "@/components/common";
+import { GuideIntro } from "@/components/guide/Guide";
 import { CreateSafe } from "@/components/onboarding/CreateSafe";
 import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { SafeStep } from "@/components/onboarding/SafeStep";
@@ -56,6 +57,7 @@ function Onboarding() {
   return (
     <OnboardingCard>
         {bar && <StepBar {...bar} />}
+        <GuideIntro topicId={creating ? "create-safe" : "choose-safe"} />
         {creating ? (
           <CreateSafe
             embedded
