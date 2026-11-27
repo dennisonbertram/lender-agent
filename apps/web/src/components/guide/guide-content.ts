@@ -425,7 +425,15 @@ const ROUTES: readonly { pattern: RegExp; id: string }[] = [
 
 /** The topic for a route, or undefined when the path has none. Query/hash and trailing slashes are ignored. */
 export function topicForPath(pathname: string): GuideTopic | undefined {
-  const clean = (pathname.split(/[?#]/, 1)[0] ?? "").replace(/\/+$/, "") || "/";
+  const queryIndex = pathname.indexOf("?");
+  const hashIndex = pathname.indexOf("#");
+  const suffixStart = Math.min(
+    queryIndex === -1 ? pathname.length : queryIndex,
+    hashIndex === -1 ? pathname.length : hashIndex,
+  );
+  let clean = pathname.slice(0, suffixStart);
+  while (clean.endsWith("/")) clean = clean.slice(0, -1);
+  if (clean === "") clean = "/";
   const route = ROUTES.find((r) => r.pattern.test(clean));
   return route ? guideTopics.find((t) => t.id === route.id) : undefined;
 }

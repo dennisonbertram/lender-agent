@@ -74,6 +74,19 @@ describe("topicForPath", () => {
     expect(topicForPath("/")?.id).toBe("welcome");
   });
 
+  it.each(["/s/0xabc#details", "/s/0xabc?tab=loans#details", "/s/0xabc#details?tab=loans"])(
+    "strips the hash and query suffix of %s in either order",
+    (path) => {
+      expect(topicForPath(path)?.id).toBe("overview");
+    },
+  );
+
+  it("keeps the root topic when only a suffix or slashes remain", () => {
+    expect(topicForPath("/?safe=0xabc")?.id).toBe("welcome");
+    expect(topicForPath("/#top")?.id).toBe("welcome");
+    expect(topicForPath("///")?.id).toBe("welcome");
+  });
+
   it.each(["/terms", "/privacy", "/s", "/s/0xabc/unknown", "/s/0xabc/loans", "/s/0xabc/proposals", "/onboarding/other", "/onboarding/agent/extra"])(
     "returns undefined for %s",
     (path) => {
