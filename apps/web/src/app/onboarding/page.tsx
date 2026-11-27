@@ -44,6 +44,7 @@ function Onboarding() {
     );
   }
   const mineList = mine.data ?? [];
+  const accountMismatch = [owned.error, mine.error].some((error) => [401, 403, 409].includes((error as { status?: number } | null)?.status ?? 0));
   const names = new Map(mineList.map((s) => [s.address.toLowerCase(), s.name]));
   const displayName = (address: string, fallback?: string) => nicknameNames[address.toLowerCase()] ?? fallback;
   const go = (address: string, agent: boolean) => router.push(agent ? `/s/${address}/chat` : `/onboarding/agent?safe=${address}`);
@@ -91,10 +92,15 @@ function Onboarding() {
         found={pickerRows.found}
         known={pickerRows.known}
         loading={owned.isLoading || owned.isFetching}
+        lookupPending={owned.pending && !owned.error}
+        discoveryIncomplete={owned.incomplete}
         lookupFailed={!!owned.error && !owned.isFetching}
-        savedLoading={mine.isLoading || mine.isFetching}
+        savedLoading={mine.isLoading || mine.isFetching || mine.isPending}
         savedLookupFailed={!!mine.error && !mine.isFetching}
-        createDisabled={mine.isLoading || mine.isFetching || !!mine.error}
+        savedClassified={mine.data !== undefined || (!!mine.error && !mine.isFetching)}
+        accountMismatch={accountMismatch}
+        freshnessByChainId={owned.freshnessByChainId}
+        createDisabled={mine.isLoading || mine.isFetching || mine.isPending || !!mine.error || (owned.incomplete && !owned.error) || accountMismatch}
         existing={mineList.map((s) => s.address)}
         busy={add.isPending || mine.isLoading}
         error={add.error?.message ?? null}

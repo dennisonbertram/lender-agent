@@ -64,10 +64,10 @@ const asSafe = (s: { address: string; name: string; networks: number[]; ownedCha
 export default function SafeLayout({ children, params }: { children: ReactNode; params: Promise<{ address: string }> }) {
   const { address } = use(params);
   const summary = useSafeSummary(address);
-  const list = useSafes();
+  const { session } = useSession();
+  const list = useSafes(session?.address);
   const pathname = usePathname() ?? "";
   const signOut = useSignOut();
-  const { session } = useSession();
   const canUseBaseReserve = !!summary.data?.ownedChainIds?.includes(8453);
   const reserveQuery = useReserve(address, canUseBaseReserve);
   const reserve = canUseBaseReserve ? reserveQuery.data?.status ?? null : null;

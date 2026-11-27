@@ -134,6 +134,74 @@ describe("useOwnedSafes progressive discovery", () => {
     await waitFor(() => expect(result.current.error).toBeTruthy(), { timeout: 1000 });
     expect(result.current.data?.[0].chainIds).toEqual([8453, 42161]);
   });
+
+  it("binds each discovery request to the wallet in the cache key", async () => {
+    const headers: Headers[] = [];
+    vi.stubGlobal("fetch", vi.fn((_input, init) => {
+      headers.push(new Headers(init?.headers));
+      return Promise.resolve(ownedOk([]));
+    }));
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: appWrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 1000 });
+    expect(headers.length).toBeGreaterThan(0);
+    expect(headers.every((h) => h.get("x-expected-wallet") === W1)).toBe(true);
+  });
+
+  it("requires a wallet and reports pending while discovery is disabled", () => {
+    const { result } = renderHook(() => useOwnedSafes(), { wrapper: appWrapper() });
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.pending).toBe(true);
+  });
+
+  it("marks cached chain details stale after its refresh fails", async () => {
+    let down = false;
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      if (String(input).includes("chainId=42161")) return Promise.resolve(down ? Response.json({ error: "down" }, { status: 500 }) : ownedOk([foundRow(42161)]));
+      return Promise.resolve(ownedOk([]));
+    }));
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: appWrapper() });
+    await waitFor(() => expect(result.current.data?.[0]?.chainIds).toEqual([42161]), { timeout: 1000 });
+    down = true;
+    await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.failedChainIds).toEqual([42161]), { timeout: 1000 });
+    expect(result.current.data?.[0]?.chainIds).toEqual([42161]);
+    expect(result.current.freshnessByChainId[42161]).toBe("stale");
+    expect(result.current.incomplete).toBe(true);
+  });
+
+  it("suppresses every stale row after the server rejects the expected wallet", async () => {
+    let changed = false;
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      if (changed) {
+        const status = String(input).includes("8453") ? 500 : 409;
+        return Promise.resolve(Response.json({ error: "wallet changed" }, { status }));
+      }
+      return Promise.resolve(ownedOk([foundRow(String(input).includes("42161") ? 42161 : 8453)]));
+    }));
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: appWrapper() });
+    await waitFor(() => expect(result.current.data).toHaveLength(1), { timeout: 1000 });
+    changed = true;
+    await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.failedChainIds).toHaveLength(2), { timeout: 1000 });
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.pending).toBe(true);
+    expect((result.current.error as { status?: number } | null)?.status).toBe(409);
+  });
+
+  it("surfaces candidate level partial failure and keeps retry available", async () => {
+    let partial = true;
+    vi.stubGlobal("fetch", vi.fn((input) => Promise.resolve({
+      ok: true,
+      json: async () => ({ safes: String(input).includes("8453") ? [foundRow(8453)] : [], ...(partial && String(input).includes("8453") ? { partial: true } : {}) }),
+    }) as unknown as Response));
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: appWrapper() });
+    await waitFor(() => expect(result.current.partial).toBe(true), { timeout: 1000 });
+    expect(result.current.error?.message).toMatch(/could not be verified/i);
+    partial = false;
+    await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.partial).toBe(false), { timeout: 1000 });
+    expect(result.current.error).toBeNull();
+  });
 });
 
 describe("useSafes wallet scoping", () => {
@@ -148,5 +216,13 @@ describe("useSafes wallet scoping", () => {
     expect(result.current.data).toBeUndefined();
     await waitFor(() => expect(result.current.data?.[0]).toMatchObject({ address: "0x2" }), { timeout: 1000 });
     expect(seen.filter((u) => u === "/api/safes")).toHaveLength(2);
+  });
+
+  it("requires a wallet before fetching the saved list", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useSafes(), { wrapper: appWrapper() });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

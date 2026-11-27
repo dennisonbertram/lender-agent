@@ -42,6 +42,7 @@ export function SignInCard({ returning = false, presentation = "default", classN
   const mock = process.env.NEXT_PUBLIC_MOCK_WALLET === "1";
   const localDemo = process.env.NEXT_PUBLIC_LOCAL_DEMO === "1";
   const authPending = sessionLoading || Boolean(session);
+  const guideAvailable = !returning || (!sessionLoading && !session);
   const choices = walletReady ? walletChoices(connectors) : [];
   // What the borrower can actually use: `injected()` is always configured, so a connector count lies.
   const noWallet = walletReady && choices.length === 0 && !(mock && connectors.some((c) => c.id === "injected"));
@@ -136,5 +137,5 @@ export function SignInCard({ returning = false, presentation = "default", classN
   );
 
   if (presentation === "hero") return <div className={className} id={id}>{content}</div>;
-  return <OnboardingCard>{content}{returning && <GuideIntro topicId="welcome" />}</OnboardingCard>;
+  return <OnboardingCard guide={guideAvailable}>{content}{returning && guideAvailable && <GuideIntro topicId="welcome" />}</OnboardingCard>;
 }

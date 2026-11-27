@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Address } from "@/shared/types";
 import type { Services } from "@/server/services";
-import { findOwnedSafes, findOwnedSafesOnChain } from "./safes";
+import { assertExpectedWallet, findOwnedSafes, findOwnedSafesOnChain, findOwnedSafesOnChainWithStatus } from "./safes";
+import { HttpError } from "@/server/http";
 
 const SAFE = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0001" as Address;
 const ME = "0x00000000000000000000000000000000000000a1" as Address;
@@ -19,6 +20,21 @@ const services = (over: Record<string, unknown> = {}, on: number[] = [8453]) => 
 }) as unknown as Services;
 
 describe("findOwnedSafesOnChain", () => {
+  it("keeps verified neighbors and reports partial when one candidate ownership read fails", async () => {
+    const NEIGHBOR = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0002" as Address;
+    const svc = services({
+      safeService: undefined,
+      readSafeOwners: async (_chainId: number, address: Address) => {
+        if (address === SAFE) throw new Error("one candidate read failed");
+        return [ME, CO];
+      },
+    }) as Services;
+    svc.safeService = () => ({ getSafesByOwner: async () => [SAFE, NEIGHBOR] }) as never;
+    const result = await findOwnedSafesOnChainWithStatus(svc, 8453, ME, { ens: async () => new Map() });
+    expect(result.partial).toBe(true);
+    expect(result.safes.map((s) => s.address)).toEqual([NEIGHBOR]);
+    await expect(findOwnedSafesOnChain(svc, 8453, ME, { ens: async () => new Map() })).rejects.toThrow(/incomplete/i);
+  });
   it("returns one network's verified slice: Service candidates confirmed on-chain, with value and owner names", async () => {
     const slices = await findOwnedSafesOnChain(services(), 8453, ME, { ens: async () => new Map([[CO.toLowerCase(), "bob.eth"]]) });
     expect(slices).toEqual([
@@ -58,10 +74,22 @@ describe("findOwnedSafesOnChain", () => {
   });
 });
 
+describe("assertExpectedWallet", () => {
+  it("allows legacy calls without the header and rejects a stale session wallet", () => {
+    expect(() => assertExpectedWallet(new Request("http://localhost/api/safes"), ME)).not.toThrow();
+    expect(() => assertExpectedWallet(new Request("http://localhost/api/safes", { headers: { "x-expected-wallet": CO } }), ME)).toThrow(HttpError);
+  });
+});
+
 describe("findOwnedSafes (aggregate, unchanged)", () => {
   it("still merges every network's verified slice into one row per Safe", async () => {
     const found = await findOwnedSafes(services({}, [8453, 42161]), ME, { ens: async () => new Map() });
     expect(found).toHaveLength(1);
     expect(found[0]).toMatchObject({ chainIds: [8453, 42161], balanceChainIds: [8453, 42161], balanceUsd: 9000 });
+  });
+
+  it("fails closed when a candidate is not verifiable instead of returning a complete-looking list", async () => {
+    const svc = services({ readSafeOwners: async () => { throw new Error("candidate read failed"); } }, [8453]);
+    await expect(findOwnedSafes(svc, ME, { ens: async () => new Map() })).rejects.toThrow(/incomplete/i);
   });
 });

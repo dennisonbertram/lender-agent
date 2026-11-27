@@ -111,6 +111,46 @@ describe("SafeStep", () => {
     expect(tile.textContent).toContain("found on Base. Other balances are unavailable.");
     expect(screen.queryByText("No supported funds found.")).toBeNull();
   });
+  it("qualifies a zero balance while discovery is still pending on other networks", () => {
+    render(<SafeStep loading found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 0, balanceChainIds: [8453],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.queryByText("No supported funds found.")).toBeNull();
+    expect(screen.getByText(/found on Base\. Other networks haven’t been checked yet/)).toBeTruthy();
+  });
+  it("marks cached ownership and balances as last known after a network refresh fails", () => {
+    const owner = "0x00000000000000000000000000000000000000b2";
+    render(<SafeStep found={[{
+      address: A, threshold: 2, ownerCount: 2, chainIds: [8453, 42161], balanceUsd: 5000, balanceChainIds: [8453, 42161],
+      networkDetails: [
+        { chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: A }] },
+        { chainId: 42161, threshold: 2, ownerCount: 2, owners: [{ address: owner }] },
+      ],
+    }]} freshnessByChainId={{ 8453: "fresh", 42161: "stale" }} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tile = screen.getByRole("listitem");
+    expect(tile.textContent).toContain("Last known supported balance");
+    expect(tile.textContent).toContain("Cached ownership, approvals, and balances on Arbitrum");
+    expect(tile.textContent).not.toContain("Verified ownership on Base and Arbitrum");
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    fireEvent.click(screen.getByRole("button", { name: "Address" }));
+    expect(screen.getByText("Approval details unavailable on Arbitrum")).toBeTruthy();
+    expect(screen.queryByText("2 of 2 owners must approve each transaction")).toBeNull();
+    expect(screen.queryByText("0x0000…00b2")).toBeNull();
+  });
+  it("shows an Open Safe save error even when discovery also failed", () => {
+    render(<SafeStep lookupFailed error="Could not save this Safe." found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByRole("alert").textContent).toContain("Could not save this Safe.");
+  });
+  it("hides cached rows and blocks creation when the wallet session no longer matches", () => {
+    render(<SafeStep accountMismatch found={[{ address: A, name: "Cached Safe", threshold: 1, ownerCount: 1, chainIds: [8453] }]}
+      known={[{ address: A, name: "Cached saved Safe", chainIds: [8453] }]} createDisabled onCreate={() => {}} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByText(/wallet session changed/)).toBeTruthy();
+    expect(screen.queryByText("Cached Safe")).toBeNull();
+    expect(screen.queryByText("Cached saved Safe")).toBeNull();
+    expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
+  });
   it("replaces a discovered partial setup with its single recovery action and suppresses the saved duplicate", () => {
     render(<SafeStep found={[{ address: A, name: "Holiday", threshold: 2, ownerCount: 3, chainIds: [8453, 42161] }]} known={[
       { address: A.toLowerCase(), name: "Holiday saved", chainIds: [8453, 42161] },

@@ -11,6 +11,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 const state = vi.hoisted(() => ({
   path: "/s/0xabc",
   mine: [] as object[],
+  safesWallet: undefined as string | undefined,
   mediaMatch: (_query: string): boolean => false,
   shell: {} as Record<string, unknown>,
   session: null as { address: string } | null,
@@ -54,7 +55,7 @@ vi.mock("@/components/wallet/TxToasts", () => ({ TxToastProvider: ({ children }:
 
 vi.mock("@/client/safes", () => ({
   useOwnedSafes: () => ({ data: [], isLoading: false, error: null, refetch: vi.fn() }),
-  useSafes: () => ({ data: state.mine, isLoading: false, error: null, refetch: vi.fn() }),
+  useSafes: (wallet?: string) => { state.safesWallet = wallet; return { data: state.mine, isLoading: false, error: null, refetch: vi.fn() }; },
   useAddSafe: () => ({ mutate: vi.fn(), isPending: false, error: null }),
   ApiError: class extends Error {},
 }));
@@ -102,6 +103,7 @@ const shellSafe = { id: "0xabc", name: "Home", address: "0xabc", threshold: "1 o
 beforeEach(() => {
   HTMLElement.prototype.scrollTo = vi.fn();
   state.mine = [];
+  state.safesWallet = undefined;
   state.mediaMatch = () => false;
   state.shell = {};
   state.session = { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" };
@@ -123,10 +125,23 @@ describe("guide entry points", () => {
     expect(container.querySelectorAll("[data-guide-provider]")).toHaveLength(1);
   });
 
-  it("keeps the sign-in control highlighted and the guide button on the returning card", () => {
+  it("keeps the signed-out returning card's sign-in control and guide available", () => {
+    state.session = null;
+    state.sessionLoading = false;
     const { container } = render(<SignInCard returning />);
     expect(container.querySelector('[data-guide-target="sign-in"]')).toBeTruthy();
     expect(container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
+  });
+
+  it.each([
+    ["unknown", null, true],
+    ["signed in", { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" }, false],
+  ] as const)("hides the returning-card guide while the session is %s", (_label, session, loading) => {
+    state.session = session;
+    state.sessionLoading = loading;
+    const { container } = render(<SignInCard returning />);
+    expect(container.querySelector('[data-guide-intro="welcome"]')).toBeNull();
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
   });
 
   it("keeps the guide button off the homepage hero's own card (the page carries it)", () => {
@@ -234,7 +249,7 @@ describe("guide intro topics", () => {
 
   it("suppresses the guide while the agent step redirects to an already-set-up chat", () => {
     state.agentStatus = {
-      isPending: false, isFetchedAfterMount: true, error: null,
+      isPending: false, isFetchedAfterMount: true, isSuccess: true, error: null,
       data: { networks: [{ chainId: 8453, deployed: true, added: true }], eligibleChainIds: [8453], canChat: true, otherChainIds: [] },
     };
     const { container } = render(<AgentStepView safeAddress="0xabc" />);

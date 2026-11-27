@@ -1,7 +1,7 @@
 import { listSafesForWallet } from "@/server/auth/access";
 import { HttpError, toResponse } from "@/server/http";
 import { requireSession } from "@/server/request";
-import { addSafe } from "@/server/safes";
+import { addSafe, assertExpectedWallet } from "@/server/safes";
 import { getServices } from "@/server/services";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export async function GET(req: Request) {
   try {
     const services = getServices();
     const { db, session } = await requireSession(req, services);
+    assertExpectedWallet(req, session.address);
     return Response.json({ safes: await listSafesForWallet(db, services.access, session.userId) });
   } catch (err) {
     return toResponse(err);

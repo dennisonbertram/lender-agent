@@ -16,11 +16,19 @@ import { DISCOVERY_CHAIN_IDS, mergeOwnedSafeSlices, type OwnedSafeSlice } from "
 import { listSafesForWallet } from "@/server/auth/access";
 import { resolveEnsNames, type EnsResolver } from "@/server/ens";
 import { loansFor, type ShellLoanView } from "@/server/loans";
+import { isAddress } from "viem";
 
 /** The networks searched for Safes: the ones the app serves (Base and Arbitrum). */
 const CHAINS: ChainId[] = DISCOVERY_CHAIN_IDS;
 
 export const NOT_OWNER_ERROR = "You are not an owner of this Safe.";
+
+/** Bind a client cache request to the authenticated session without changing older callers that omit the header. */
+export function assertExpectedWallet(req: Request, wallet: Address): void {
+  const expected = req.headers.get("x-expected-wallet");
+  if (expected === null) return;
+  if (!isAddress(expected, { strict: false }) || expected.toLowerCase() !== wallet.toLowerCase()) throw new HttpError(409, "The signed-in wallet changed. Refresh and try again.");
+}
 
 export type FoundSafe = {
   address: Address; threshold: number; ownerCount: number; chainIds: ChainId[];
@@ -76,13 +84,16 @@ async function readValue(services: Services, chainId: ChainId, safe: Address) {
  * balance and owner names when readable. One independently completable unit of work — the progressive picker asks
  * for each network separately. On the fork only Base is searched (its Safe service throws for any other chain).
  */
-export async function findOwnedSafesOnChain(services: Services, chainId: ChainId, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<OwnedSafeSlice[]> {
+export async function findOwnedSafesOnChainWithStatus(services: Services, chainId: ChainId, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<{ safes: OwnedSafeSlice[]; partial: boolean }> {
   const ens = deps.ens ?? resolveEnsNames;
-  if (services.fork && chainId !== 8453) return [];
+  if (services.fork && chainId !== 8453) return { safes: [], partial: false };
   const addrs = await services.safeService(chainId).getSafesByOwner(wallet);
+  let partial = false;
   const checked = await Promise.all([...new Set(addrs.map((a) => a.toLowerCase()))].map(async (lc) => {
     const address = addrs.find((a) => a.toLowerCase() === lc)!;
-    const r = await readOwned(services, chainId, address, wallet);
+    let r: Awaited<ReturnType<typeof readOwned>>;
+    try { r = await readOwned(services, chainId, address, wallet); }
+    catch { partial = true; return null; }
     if (!r) return null;
     const [value, names] = await Promise.all([
       readValue(services, chainId, address),
@@ -91,13 +102,21 @@ export async function findOwnedSafesOnChain(services: Services, chainId: ChainId
     const owners = r.owners.map((o) => ({ address: o, ...(names.get(o.toLowerCase()) ? { ens: names.get(o.toLowerCase())! } : {}) }));
     return { address, chainId, threshold: r.threshold, ownerCount: r.owners.length, owners, ...(value ?? {}) };
   }));
-  return checked.filter((c): c is OwnedSafeSlice => c !== null);
+  return { safes: checked.filter((c): c is OwnedSafeSlice => c !== null), partial };
+}
+
+/** Compatibility wrapper for callers that need only the verified rows. */
+export async function findOwnedSafesOnChain(services: Services, chainId: ChainId, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<OwnedSafeSlice[]> {
+  const result = await findOwnedSafesOnChainWithStatus(services, chainId, wallet, deps);
+  if (result.partial) throw new Error("Owned Safe discovery was incomplete.");
+  return result.safes;
 }
 
 /** Safes the wallet owns, from the Transaction Service, each confirmed on-chain, with balance and owner names when readable. */
 export async function findOwnedSafes(services: Services, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<FoundSafe[]> {
-  const slices = await Promise.all(CHAINS.map((chainId) => findOwnedSafesOnChain(services, chainId, wallet, deps)));
-  return mergeOwnedSafeSlices(slices.flat());
+  const results = await Promise.all(CHAINS.map((chainId) => findOwnedSafesOnChainWithStatus(services, chainId, wallet, deps)));
+  if (results.some((result) => result.partial)) throw new Error("Owned Safe discovery was incomplete.");
+  return mergeOwnedSafeSlices(results.flatMap((result) => result.safes));
 }
 
 /** Add a Safe the wallet owns to the user's list. Throws a 400 with the user-facing text; saves nothing on error. */

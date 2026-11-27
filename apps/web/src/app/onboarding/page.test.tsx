@@ -23,15 +23,15 @@ vi.mock("@/client/auth/useSession", () => ({
 
 let ownedData: object[] = [];
 let ownedFetching = false;
-let mineData: object[] = [];
+let mineData: object[] | undefined = [];
 let mineLoading = false;
 let mineError: Error | null = null;
 const refetch = vi.fn();
 const ownedWalletArgs: (string | undefined)[] = [];
 const mineWalletArgs: (string | undefined)[] = [];
 vi.mock("@/client/safes", () => ({
-  useOwnedSafes: (w?: string) => { ownedWalletArgs.push(w); return { data: ownedData, isLoading: false, isFetching: ownedFetching, error: null, refetch }; },
-  useSafes: (w?: string) => { mineWalletArgs.push(w); return { data: mineData, isLoading: mineLoading, isFetching: mineLoading, error: mineError, refetch }; },
+  useOwnedSafes: (w?: string) => { ownedWalletArgs.push(w); return { data: ownedData, isLoading: false, isFetching: ownedFetching, pending: false, freshnessByChainId: {}, error: null, refetch }; },
+  useSafes: (w?: string) => { mineWalletArgs.push(w); return { data: mineData, isLoading: mineLoading, isFetching: mineLoading, isPending: mineData === undefined, error: mineError, refetch }; },
   useAddSafe: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 
@@ -245,5 +245,14 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     render(<OnboardingPage />);
     expect(screen.getByText("Looking for your Safes…")).toBeTruthy();
     expect(screen.queryByText(/No Safe found for/)).toBeNull();
+  });
+
+  it("waits to classify live-only Safes until the first saved-list response", () => {
+    mineData = undefined;
+    ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
+    render(<OnboardingPage />);
+    expect(screen.queryByRole("button", { name: `Open Safe Holiday ${shortAddress(SAFE_A)}` })).toBeNull();
+    expect(screen.getByText(/Checking your saved Safes/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
