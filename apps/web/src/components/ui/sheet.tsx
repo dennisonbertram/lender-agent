@@ -1,9 +1,11 @@
 "use client";
 
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type * as React from "react";
 import { DialogOverlay, DialogPortal } from "./dialog";
+import { keyboardViewport } from "./keyboard-viewport";
 
 /** A panel that slides up from the bottom edge. Escape, a tap outside or Close dismisses it. */
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
@@ -18,7 +20,31 @@ function SheetClose({ ...props }: SheetPrimitive.Close.Props) {
   return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
 }
 
-function SheetContent({ className, children, ...props }: SheetPrimitive.Popup.Props) {
+function SheetContent({ className, children, style, ...props }: SheetPrimitive.Popup.Props) {
+  const [visibleViewport, setVisibleViewport] = useState<{ height: number; bottom: number } | null>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const syncVisibleViewport = () => {
+      const visible = keyboardViewport();
+      setVisibleViewport((previous) => visible?.height === previous?.height && visible?.bottom === previous?.bottom
+        ? previous
+        : visible);
+    };
+    syncVisibleViewport();
+    viewport.addEventListener("resize", syncVisibleViewport);
+    viewport.addEventListener("scroll", syncVisibleViewport);
+    return () => {
+      viewport.removeEventListener("resize", syncVisibleViewport);
+      viewport.removeEventListener("scroll", syncVisibleViewport);
+    };
+  }, []);
+  const keyboardStyle: React.CSSProperties | undefined = visibleViewport
+    ? {
+        maxHeight: `${Math.min(window.innerHeight * 0.85, visibleViewport.height * 0.85)}px`,
+        bottom: `${visibleViewport.bottom}px`,
+      }
+    : undefined;
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -29,6 +55,7 @@ function SheetContent({ className, children, ...props }: SheetPrimitive.Popup.Pr
           className,
         )}
         {...props}
+        style={{ ...style, ...keyboardStyle }}
       >
         {children}
       </SheetPrimitive.Popup>

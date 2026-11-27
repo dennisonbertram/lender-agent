@@ -114,10 +114,40 @@ describe("ChatView", () => {
     expect(screen.queryByTestId("greeting")).toBeNull();
   });
 
-  it("explains a 403 instead of crashing", async () => {
+  it("explains a 403 instead of crashing and never offers Add Agent", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "no" }), { status: 403 })));
-    render(wrap(<ChatView address="0xabc" />));
+    render(wrap(<ChatView address="0xabc" />, { agentOn: false }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
+    expect(screen.queryByText(/Add the Lender agent to suggest plans/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add the agent/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Check access again" })).toBeTruthy();
+  });
+
+  it("keeps the ownership state after an initial 403 and transient access-check failure", async () => {
+    let denied = true;
+    vi.stubGlobal("fetch", vi.fn(async () => denied
+      ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })
+      : new Response(JSON.stringify({ error: "unavailable" }), { status: 500 })));
+    render(wrap(<ChatView address="0xabc" />, { agentOn: false }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
+    denied = false;
+    fireEvent.click(screen.getByRole("button", { name: "Check access again" }));
+    expect(await screen.findByText(/We could not confirm access/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/owner of this Safe on every network/);
+    expect(screen.queryByText(/Add the Lender agent to suggest plans/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add the agent/ })).toBeNull();
+  });
+
+  it("keeps a locked composer in place while loading and after a failed load", async () => {
+    let resolve!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((done) => { resolve = done; })));
+    render(wrap(<ChatView address="0xabc" />));
+    const input = screen.getByPlaceholderText("Ask anything, or say how much you need") as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
+    resolve(new Response("{}", { status: 500 }));
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
+    expect((screen.getByPlaceholderText("Ask anything, or say how much you need") as HTMLInputElement).disabled).toBe(true);
   });
 
   it("a failed load offers Try again, which loads the thread", async () => {
@@ -125,6 +155,7 @@ describe("ChatView", () => {
     vi.stubGlobal("fetch", vi.fn(async () => (fail ? new Response("{}", { status: 500 }) : new Response(JSON.stringify({ messages: [] }), { status: 200 }))));
     render(wrap(<ChatView address="0xabc" />));
     expect((await screen.findByRole("alert")).textContent).toMatch(/could not load the conversation/);
+    expect((screen.getByPlaceholderText("Ask anything, or say how much you need") as HTMLInputElement).disabled).toBe(true);
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("log")).toBeTruthy();
@@ -134,6 +165,15 @@ describe("ChatView", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
     render(wrap(<ChatView address="0xabc" />));
     expect(screen.getByRole("status", { name: "Loading the conversation" })).toBeTruthy();
+    expect((screen.getByPlaceholderText("Ask anything, or say how much you need") as HTMLInputElement).disabled).toBe(true);
+    expect(document.querySelector('[data-guide-target="chat-compose"]')).toBeNull();
+  });
+
+  it("exposes the guide target only on the live composer", async () => {
+    thread([]);
+    render(wrap(<ChatView address="0xabc" />));
+    await screen.findByRole("log");
+    expect(screen.getByLabelText("Message").getAttribute("data-guide-target")).toBe("chat-compose");
   });
 
   it("names the network and the Safe under the agent's name, with copy, explorer and Open in Safe", async () => {
@@ -153,6 +193,37 @@ describe("ChatView", () => {
     const setVisibility = (v: "visible" | "hidden") => Object.defineProperty(document, "visibilityState", { configurable: true, get: () => v });
     beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); setVisibility("visible"); });
     afterEach(() => { vi.useRealTimers(); setVisibility("visible"); });
+
+    it("hides old history after a polling 403 and requires a successful access check to restore chat", async () => {
+      let mode: "allowed" | "denied" | "transient" = "allowed";
+      let recovered = false;
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        if (mode === "denied") return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+        if (mode === "transient") return new Response(JSON.stringify({ error: "unavailable" }), { status: 500 });
+        const messages = recovered ? [m("a2", "fresh authorized history")] : [m("a1", "private history text")];
+        return new Response(JSON.stringify({ messages }), { status: 200 });
+      }));
+      render(wrap(<ChatView address="0xabc" />));
+      expect(await screen.findByText("private history text")).toBeTruthy();
+      mode = "denied";
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
+      expect(screen.queryByText("private history text")).toBeNull();
+      expect(screen.queryByPlaceholderText("Ask anything, or say how much you need")).toBeNull();
+      expect(screen.queryByRole("log")).toBeNull();
+
+      mode = "transient";
+      fireEvent.click(screen.getByRole("button", { name: "Check access again" }));
+      await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/owner of this Safe on every network/));
+      expect(screen.queryByText("private history text")).toBeNull();
+      expect(screen.getByRole("button", { name: "Check access again" })).toBeTruthy();
+
+      mode = "allowed";
+      recovered = true;
+      fireEvent.click(screen.getByRole("button", { name: "Check access again" }));
+      expect(await screen.findByText("fresh authorized history")).toBeTruthy();
+      expect(screen.queryByText("private history text")).toBeNull();
+    });
 
     it("shows a server message appended while idle exactly once, and announces it", async () => {
       let stored = [m("a1", "hello")];

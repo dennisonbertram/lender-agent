@@ -64,3 +64,62 @@ test("sidebar stays put (the page itself never scrolls), and scrolls itself in s
   const scrolls = await side.evaluate((el) => el.scrollHeight > el.clientHeight && getComputedStyle(el).overflowY === "auto");
   expect(scrolls).toBe(true);
 });
+
+test("long chat follows a late reply and keeps the shell, heading, and composer on screen while reading back", async ({ page }) => {
+  await useWallet(page, "owner");
+  await setupChat(page);
+
+  const history = Array.from({ length: 24 }, (_, i) => ({
+    id: `borrower-${i}`,
+    role: i % 2 ? "assistant" : "user",
+    parts: [{ type: "text", text: `Earlier conversation message ${i + 1}. ${"The borrower and lender reviewed the loan details. ".repeat(4)}` }],
+  }));
+  let replyCount = 0;
+  await page.route(`**/api/safes/${MOCK_SAFE}/chat`, async (route) => {
+    const messages = [...history];
+    if (replyCount > 0) messages.push({ id: "latest-agent-reply", role: "assistant", parts: [{ type: "text", text: "The latest reply arrived after the borrower opened the conversation." }] });
+    if (replyCount > 1) messages.push({ id: "reply-while-reading-back", role: "assistant", parts: [{ type: "text", text: "A second reply arrived while the borrower was reading earlier messages." }] });
+    await route.fulfill({ json: { messages } });
+  });
+  await page.reload();
+
+  const log = page.getByRole("log", { name: "Conversation with Lender agent" });
+  const composer = page.getByRole("main").getByRole("textbox", { name: "Message" });
+  const nav = page.locator("[data-sidebar]").getByRole("link", { name: /Overview/ });
+  const heading = page.getByRole("main").getByRole("heading", { name: "Lender agent" });
+  await expect(log.getByText("Earlier conversation message 24.")).toBeVisible();
+  await expect(composer).toBeInViewport();
+
+  replyCount = 1;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(log.getByText("The latest reply arrived after the borrower opened the conversation.")).toBeVisible();
+  await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThanOrEqual(2);
+
+  await log.evaluate((el) => { el.scrollTop = 0; });
+  const earlierMessage = log.getByText("Earlier conversation message 1.");
+  await expect(earlierMessage).toBeInViewport();
+  await expect.poll(() => log.evaluate((el) => el.scrollTop)).toBe(0);
+
+  replyCount = 2;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(log.getByText("A second reply arrived while the borrower was reading earlier messages.")).toBeVisible();
+  const newMessages = page.getByRole("button", { name: /New messages/ });
+  await expect(newMessages).toBeVisible();
+  await expect(nav).toBeInViewport();
+  await expect(heading).toBeInViewport();
+  await expect(composer).toBeInViewport();
+
+  await newMessages.click();
+  await expect(log.getByText("A second reply arrived while the borrower was reading earlier messages.")).toBeInViewport();
+  await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThanOrEqual(2);
+  await expect(nav).toBeInViewport();
+  await expect(composer).toBeInViewport();
+
+  const geometry = await page.evaluate(() => ({
+    documentScrollHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight,
+    windowScrollY: window.scrollY,
+  }));
+  expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight);
+  expect(geometry.windowScrollY).toBe(0);
+});

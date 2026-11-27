@@ -19,6 +19,19 @@ import { NETWORK_OF } from "@/shared/types";
 /** Kept short: the mockup has no wording for this, so this is the plan's wording condensed. */
 const OWNERS_DIFFER_NOTICE = "The owners of this Safe differ between networks. You can see and act on the networks you own; chat needs ownership on all of them.";
 
+function PendingSafeRail() {
+  return (
+    <aside aria-hidden="true" className="hidden w-[232px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col md:gap-6 md:p-4">
+      <div className="h-9 w-40 animate-pulse rounded-md bg-muted/70" />
+      <div className="flex flex-col gap-3">
+        <div className="h-9 w-full animate-pulse rounded-md bg-muted/50" />
+        <div className="h-9 w-4/5 animate-pulse rounded-md bg-muted/50" />
+        <div className="h-9 w-11/12 animate-pulse rounded-md bg-muted/50" />
+      </div>
+    </aside>
+  );
+}
+
 
 const asSafe = (s: { address: string; name: string; networks: number[]; ownedChainIds: number[]; agent: boolean }): Safe => ({
   id: s.address,
@@ -51,18 +64,24 @@ export default function SafeLayout({ children, params }: { children: ReactNode; 
       ? { ...base, title: "This wallet is not an owner of this Safe", reason: "Only a Safe's owners can open it. Pick another Safe, or connect a wallet that owns this one.", primary: { label: "Pick another Safe", href: "/onboarding" } }
       : base;
     return (
-      <div className="flex min-h-full flex-col">
-      <MinimalTopBar address={address} onSignOut={() => void signOut()} />
-      <main className="flex flex-1 items-center justify-center p-4">
-        <StateMessage kind="error" title={d.title} reason={d.reason} action={d.primary} secondary={d.secondary} reassure={d.kind !== "signed-out" && d.kind !== "no-access"} className="text-left" />
-      </main>
+      <div className="flex min-h-full flex-col md:flex-row">
+      <PendingSafeRail />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MinimalTopBar address={address} onSignOut={() => void signOut()} />
+        <main className="flex min-h-0 flex-1 items-center justify-center p-4">
+          <StateMessage kind="error" title={d.title} reason={d.reason} action={d.primary} secondary={d.secondary} reassure={d.kind !== "signed-out" && d.kind !== "no-access"} className="text-left" />
+        </main>
+      </div>
       </div>
     );
   }
   if (!summary.data) return (
-    <div className="flex min-h-full flex-col">
-      <MinimalTopBar address={address} onSignOut={() => void signOut()} />
-      <main className="flex flex-1 items-center justify-center p-4"><StateMessage kind="loading" label="Loading this Safe…" /></main>
+    <div className="flex min-h-full flex-col md:flex-row">
+      <PendingSafeRail />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MinimalTopBar address={address} onSignOut={() => void signOut()} />
+        <main className="flex min-h-0 flex-1 items-center justify-center p-4"><StateMessage kind="loading" label="Loading this Safe…" /></main>
+      </div>
     </div>
   );
   const { safe, ownersDiffer, watching, ownedChainIds } = summary.data;

@@ -16,6 +16,7 @@ import { GuideButton } from "@/components/guide/Guide";
 import { primaryChain, useShell } from "./ShellContext";
 import { CHAIN_IDS, CHAIN_NAME, isChainId } from "@/shared/types";
 import { NetworkMark } from "@/components/ui/network-mark";
+import { keyboardViewport } from "@/components/ui/keyboard-viewport";
 
 /** Tracks a media query. False on the server and until mounted. */
 export function useMedia(query: string): boolean {
@@ -56,6 +57,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
   const [chatSheet, setChatSheet] = useState(false);
   const [navSheet, setNavSheet] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const showSidebar = useMedia("(min-width: 768px)");
   const showChat = useMedia("(min-width: 1100px)");
   // The page is the chat: no side panel or header button. Addresses in URLs may be lowercased.
@@ -68,6 +70,31 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
   useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [pathname]);
 
+  // Some mobile browsers resize only the visual viewport when the keyboard opens.
+  // Match that viewport at the normal zoom level; leave browser pinch zoom alone.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const shell = shellRef.current;
+    if (!viewport || !shell) return;
+    const syncVisibleViewport = () => {
+      const visible = keyboardViewport();
+      if (!visible) {
+        shell.style.height = "";
+        shell.style.top = "";
+        return;
+      }
+      shell.style.height = `${visible.height}px`;
+      shell.style.top = `${viewport.offsetTop}px`;
+    };
+    syncVisibleViewport();
+    viewport.addEventListener("resize", syncVisibleViewport);
+    viewport.addEventListener("scroll", syncVisibleViewport);
+    return () => {
+      viewport.removeEventListener("resize", syncVisibleViewport);
+      viewport.removeEventListener("scroll", syncVisibleViewport);
+    };
+  }, []);
+
   useEffect(() => setNavSheet(false), [pathname]);
   // Links navigate themselves; the Safe picker's menu items need the router.
   const go = (href: string) => router.push(href);
@@ -76,7 +103,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
   return (
     <TxToastProvider>
-    <div className="flex h-full flex-col overflow-hidden">
+    <div ref={shellRef} className="relative flex h-dvh flex-col overflow-hidden">
     {chainId !== undefined && isChainId(chainId) && TESTNET_IDS.has(chainId) && (
       <p role="note" className="flex shrink-0 items-center justify-center gap-1.5 border-b border-warning-text/30 bg-warning/15 px-3 py-1 text-xs text-warning-text"><NetworkMark id={chainId} />Test network: {CHAIN_NAME[chainId]}</p>
     )}
@@ -84,7 +111,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
       <a href="#main-content" className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-2 focus-visible:top-2 focus-visible:z-50 focus-visible:rounded-md focus-visible:bg-background focus-visible:px-3 focus-visible:py-2 focus-visible:text-sm focus-visible:ring-2 focus-visible:ring-ring">Skip to content</a>
       {showSidebar && <aside className="w-[232px] shrink-0 border-r border-sidebar-border"><Sidebar safe={safe} safes={safes} statusesBySafe={statusesBySafe} chainId={chainId} loans={loans} loansError={loansError} pathname={pathname} onNavigate={go} userLabel={userLabel} userAddress={userAddress} reserve={reserve} ownedChainIds={ownedChainIds} onSignOut={onSignOut} /></aside>}
 
-      <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col focus:outline-none">
+      <main id="main-content" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col focus:outline-none">
         {(!showSidebar || (hasChat && !docked && !onChat)) && (
         <header className="flex items-center gap-2 border-b border-border p-2 pl-3">
           {!showSidebar && (
@@ -103,7 +130,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
           )}
         </header>
         )}
-        {onChat ? <div className="min-h-0 flex-1">{children}</div> : (
+        {onChat ? <div className="flex min-h-0 flex-1 flex-col">{children}</div> : (
         <div ref={scrollRef} className="rk-scroll min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-5xl">{children}</div>
         </div>
@@ -111,7 +138,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
       </main>
 
       {docked && (
-        <aside className="w-[440px] min-[1440px]:w-[520px] shrink-0 border-l border-border">{renderChat(() => setChatDocked(false))}</aside>
+        <aside className="flex min-h-0 w-[440px] min-[1440px]:w-[520px] shrink-0 flex-col border-l border-border">{renderChat(() => setChatDocked(false))}</aside>
       )}
 
       {!showSidebar && (

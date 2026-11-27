@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { ArrowDown } from "lucide-react";
 import type { UIMessage } from "ai";
 import { Greeting } from "@/components/chat/Greeting";
@@ -24,32 +24,74 @@ type Props = {
   placement?: ProposalPlacement;
   /** On Get Cash, the docked greeting gives help without introducing a competing loan offer. */
   contextualHelpOnly?: boolean;
+  /** Increments for a message or block initiated in this tab. */
+  localFollowVersion?: number;
 };
 
 const bubble = "max-w-[85%] self-end rounded-2xl bg-chat-user px-3.5 py-2 text-sm text-chat-user-foreground";
 
 /** The thread as a log (r26). Parts: text, tool results (blocks), `data-block`, `data-proposal`, `data-alert`. A tool that errored or has no result yet renders nothing. */
-export function MessageList({ messages, safeAddress, onSend, typing, disabled, onPostBlock, placement, contextualHelpOnly }: Props) {
-  const end = useRef<HTMLDivElement>(null);
+export function MessageList({ messages, safeAddress, onSend, typing, disabled, onPostBlock, placement, contextualHelpOnly, localFollowVersion }: Props) {
   const box = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const contentHeight = useRef(0);
+  const logHeight = useRef(0);
   const lastId = useRef<string | undefined>(undefined);
+  const lastParts = useRef<UIMessage["parts"] | undefined>(undefined);
+  const lastLocalFollowVersion = useRef(localFollowVersion);
   const [unseen, setUnseen] = useState(false);
-  const toEnd = () => { end.current?.scrollIntoView?.({ block: "end" }); atBottom.current = true; setUnseen(false); };
-  // Follow new content only when the reader is at (or within 80px of) the bottom, or just sent a message.
+  const toEnd = () => {
+    const log = box.current;
+    if (log) log.scrollTop = log.scrollHeight;
+    atBottom.current = true;
+    setUnseen(false);
+  };
+  // Message changes are incoming transcript content; layout changes are handled separately below.
   useEffect(() => {
     const last = messages[messages.length - 1];
-    const sentNow = last?.role === "user" && last.id !== lastId.current;
-    const grew = last?.id !== lastId.current;
+    const changed = last?.id !== lastId.current || last?.parts !== lastParts.current;
+    const localFollow = localFollowVersion !== lastLocalFollowVersion.current;
     lastId.current = last?.id;
-    if (atBottom.current || sentNow) toEnd();
-    else if (grew) setUnseen(true);
-  }, [messages, typing]);
+    lastParts.current = last?.parts;
+    lastLocalFollowVersion.current = localFollowVersion;
+    if (atBottom.current || localFollow) toEnd();
+    else if (changed) setUnseen(true);
+  }, [messages, typing, localFollowVersion]);
+  useEffect(() => {
+    const target = content.current;
+    const log = box.current;
+    if (!target || !log || typeof ResizeObserver === "undefined") return;
+    contentHeight.current = target.scrollHeight;
+    logHeight.current = log.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const nextHeight = target.scrollHeight;
+      const nextLogHeight = log.clientHeight;
+      const grew = nextHeight > contentHeight.current;
+      const viewportShrank = nextLogHeight < logHeight.current;
+      contentHeight.current = nextHeight;
+      logHeight.current = nextLogHeight;
+      if ((grew || viewportShrank) && atBottom.current) toEnd();
+    });
+    observer.observe(target);
+    observer.observe(log);
+    return () => observer.disconnect();
+  }, []);
   const onScroll = () => {
     const el = box.current;
     if (!el) return;
     atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
     if (atBottom.current) setUnseen(false);
+  };
+  const noteControlInteraction = (event: MouseEvent<HTMLDivElement>) => {
+    if (!(event.target as Element).closest("summary, [aria-expanded]")) return;
+    atBottom.current = false;
+    requestAnimationFrame(() => {
+      const log = box.current;
+      if (!log) return;
+      atBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight <= 80;
+      if (atBottom.current) setUnseen(false);
+    });
   };
   const lastAgentId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
   // Index of the last message that holds a proposal card: a plan sent before it is shown by that card alone.
@@ -58,7 +100,8 @@ export function MessageList({ messages, safeAddress, onSend, typing, disabled, o
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-    <div ref={box} onScroll={onScroll} role="log" aria-label="Conversation with Lender agent" className="rk-scroll @container flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+    <div ref={box} onScroll={onScroll} onClickCapture={noteControlInteraction} role="log" aria-label="Conversation with Lender agent" className="rk-scroll @container flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+      <div ref={content} className="flex flex-col gap-3">
       {!asked && <div className="flex w-full @xl:max-w-[80%] flex-col gap-2"><Greeting safeAddress={safeAddress} onSend={onSend} disabled={disabled} contextualHelpOnly={contextualHelpOnly} /></div>}
       {messages.map((m, mi) => {
         if (m.role === "user") return <div key={m.id} className={bubble}>{m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}</div>;
@@ -108,7 +151,7 @@ export function MessageList({ messages, safeAddress, onSend, typing, disabled, o
           {[0, 1, 2].map((i) => <span key={i} aria-hidden className="size-1.5 animate-pulse rounded-full bg-muted-foreground" style={{ animationDelay: `${i * 150}ms` }} />)}
         </div>
       )}
-      <div ref={end} />
+      </div>
     </div>
     {unseen && (
       <button type="button" onClick={toEnd} className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-md hover:bg-muted">
