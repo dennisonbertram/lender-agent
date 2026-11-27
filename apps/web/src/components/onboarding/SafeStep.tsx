@@ -321,14 +321,14 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
         <details className="rounded-lg border border-border px-3 py-2">
           <summary className="cursor-pointer text-sm text-muted-foreground">Other options</summary>
           <div className="mt-2 flex flex-col gap-2">
-            {onCreate && <Button size="lg" variant="outline" data-guide-target="create-safe" disabled={createDisabled} onClick={onCreate}>Create a new Safe</Button>}
+            {onCreate && <Button size="lg" variant="outline" disabled={createDisabled} onClick={onCreate}>Create a new Safe</Button>}
             <Button size="lg" variant="outline" onClick={() => setAdding(true)}>Add by address</Button>
           </div>
         </details>
       ) : (
         <div className="flex flex-col gap-2">
           {empty && onUseAnotherWallet && <Button size="lg" onClick={onUseAnotherWallet}>Use another wallet</Button>}
-          {onCreate && <Button size="lg" disabled={createDisabled} data-guide-target="create-safe" variant={none && !(empty && onUseAnotherWallet) ? "default" : "outline"} onClick={onCreate}>Create a new Safe</Button>}
+          {onCreate && <Button size="lg" disabled={createDisabled} variant={none && !(empty && onUseAnotherWallet) ? "default" : "outline"} onClick={onCreate}>Create a new Safe</Button>}
           <Button size="lg" variant="outline" onClick={() => setAdding(true)}>Add by address</Button>
         </div>
       )}

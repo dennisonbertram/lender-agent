@@ -86,9 +86,15 @@ function writePrefs(prefs: GuidePrefs) {
   }
 }
 
-/** Actually shown: attached, not inside a `hidden` subtree, visible per the box tree when supported. */
+/** Actually shown: attached, not inside a `hidden` subtree or a closed `details` (whose
+    own summary stays rendered), and visible per the box tree when supported. */
 function isShown(el: HTMLElement): boolean {
   if (!el.isConnected || el.closest("[hidden]")) return false;
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (p.tagName !== "DETAILS" || p.hasAttribute("open")) continue;
+    const summary = [...p.children].find((c) => c.tagName === "SUMMARY");
+    if (!summary?.contains(el)) return false;
+  }
   // jsdom lacks checkVisibility; there an attached non-hidden node counts as shown.
   return typeof el.checkVisibility === "function" ? el.checkVisibility({ checkVisibilityCSS: true }) : true;
 }
@@ -117,7 +123,10 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const onQuery = useCallback((q: string) => setQuery((prev) => (prev === q ? prev : q)), []);
   const scopeKey = `${pathKey}\n${query}`;
   const progress = useRef<{ scope: string; topicId: string; step: number } | null>(null);
-  const [spot, setSpot] = useState<HTMLElement | null>(null);
+  // The highlighted control plus the step's target name at activation: one control can be
+  // reused for another action (a wizard's Next/Confirm), so the marker — not the node —
+  // decides whether the paused spotlight still points at the right thing.
+  const [spot, setSpot] = useState<{ el: HTMLElement; target: string } | null>(null);
   // Focus hand-off for when the overlay closes: the control to point at next, and the
   // route-local element that last opened the guide (restored on Done/Escape/Dismiss).
   const focusNext = useRef<HTMLElement | null>(null);
@@ -239,15 +248,16 @@ export function GuideProvider({ children }: { children: ReactNode }) {
 
   const showOnPage = useCallback(
     (step: GuideStep, topicId: string, stepIndex: number) => {
-      const el = step.target ? guideTarget(step.target) : null;
+      const name = step.target;
+      const el = name ? guideTarget(name) : null;
       // The control went away since the step rendered — keep the guide open rather than
       // hiding it over nothing.
-      if (!el) return;
+      if (!name || !el) return;
       progress.current = { scope: scopeKey, topicId, step: stepIndex };
       // A disabled control can be pointed at and explained, not focused.
       focusNext.current = el.matches(":disabled") ? null : el;
       setView({ kind: "closed" });
-      setSpot(el);
+      setSpot({ el, target: name });
     },
     [scopeKey],
   );
@@ -281,17 +291,18 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   // wallet for anything. Focus arrives via finalFocus once the overlay is gone.
   useEffect(() => {
     if (!spot) return;
+    const el = spot.el;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    spot.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    el.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
     const nativelyFocusable =
-      /^(?:A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY)$/.test(spot.tagName) ||
-      spot.hasAttribute("tabindex") ||
-      spot.isContentEditable;
-    if (!nativelyFocusable) spot.setAttribute("tabindex", "-1");
-    spot.classList.add(styles.spotlight ?? "guide-spotlight");
+      /^(?:A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY)$/.test(el.tagName) ||
+      el.hasAttribute("tabindex") ||
+      el.isContentEditable;
+    if (!nativelyFocusable) el.setAttribute("tabindex", "-1");
+    el.classList.add(styles.spotlight ?? "guide-spotlight");
     return () => {
-      spot.classList.remove(styles.spotlight ?? "guide-spotlight");
-      if (!nativelyFocusable) spot.removeAttribute("tabindex");
+      el.classList.remove(styles.spotlight ?? "guide-spotlight");
+      if (!nativelyFocusable) el.removeAttribute("tabindex");
     };
   }, [spot]);
 
@@ -305,19 +316,20 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [spot]);
 
-  // The highlighted control can unmount or hide while the guide is paused — drop the
-  // spotlight and its banner rather than claim a highlight that no longer exists.
+  // The highlighted control can unmount, hide or stop being the step's target while the
+  // guide is paused — drop the spotlight and its banner rather than claim a highlight
+  // that no longer exists.
   useEffect(() => {
     if (!spot) return;
     const check = () => {
-      if (!isShown(spot)) setSpot(null);
+      if (spot.el.getAttribute("data-guide-target") !== spot.target || !isShown(spot.el)) setSpot(null);
     };
     const observer = new MutationObserver(check);
     observer.observe(document.body, {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["data-guide-target", "hidden", "style", "class", "disabled"],
+      attributeFilter: ["data-guide-target", "hidden", "style", "class", "disabled", "open"],
     });
     return () => observer.disconnect();
   }, [spot]);
@@ -517,7 +529,7 @@ function TopicWalkthrough({
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["data-guide-target", "hidden", "style", "class", "disabled"],
+      attributeFilter: ["data-guide-target", "hidden", "style", "class", "disabled", "open"],
     });
     return () => observer.disconnect();
   }, [targetName]);

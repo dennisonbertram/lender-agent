@@ -204,12 +204,50 @@ describe("guide intro topics", () => {
 });
 
 describe("guide step targets stay on the real controls", () => {
-  it("choose-safe marks the Safe list and create-safe the create action", () => {
-    const { container } = render(
+  it("choose-safe marks the Safe list; the picker's create launchers stay unmarked", () => {
+    const found = render(
       <SafeStep found={[foundSafe]} busy={false} onPick={() => {}} onAdd={() => {}} onCreate={() => {}} existing={[]} />,
     );
-    expect(container.querySelector('[data-guide-target="choose-safe"]')).toBeTruthy();
-    expect(container.querySelector('[data-guide-target="create-safe"]')).toBeTruthy();
+    expect(found.container.querySelector('[data-guide-target="choose-safe"]')).toBeTruthy();
+    // "Create a new Safe" only starts the flow — the review step's own marker must not sit
+    // on the launcher, or "Show on page" would highlight a button with no review behind it.
+    const launcher = [...found.container.querySelectorAll("button")].find((b) => b.textContent === "Create a new Safe");
+    expect(launcher).toBeTruthy();
+    expect(launcher!.getAttribute("data-guide-target")).toBeNull();
+    expect(found.container.querySelector('[data-guide-target="create-safe"]')).toBeNull();
+    found.unmount();
+    const empty = render(
+      <SafeStep found={[]} busy={false} onPick={() => {}} onAdd={() => {}} onCreate={() => {}} existing={[]} />,
+    );
+    expect(empty.getByRole("button", { name: "Create a new Safe" }).getAttribute("data-guide-target")).toBeNull();
+    expect(empty.container.querySelector('[data-guide-target="create-safe"]')).toBeNull();
+  });
+
+  it("create-safe marks only the review step's submit inside the create flow", async () => {
+    // The real component, not the stub above: the contract is that its marker reaches the
+    // DOM only on the final "Create Safe" confirmation.
+    const { CreateSafe } = await vi.importActual<typeof import("@/components/onboarding/CreateSafe")>(
+      "@/components/onboarding/CreateSafe",
+    );
+    const api = {
+      preview: vi.fn(async () => ({ address: foundSafe.address, index: 0, message: "m", sponsored: true, cost: "free", chainId: 8453 })),
+      create: vi.fn(async () => ({ address: foundSafe.address })),
+      setup: vi.fn(async () => ({ status: "ready" as const, indexed: true })),
+      reconcile: vi.fn(async () => ({ status: "ready" as const, indexed: true })),
+      payFee: vi.fn(async () => "0xhash"),
+      indexed: vi.fn(async () => true),
+    };
+    const { container } = render(
+      <CreateSafe wallet="0x70997970C51812dc3A010C7d01b50e0d17dc79C8" api={api} onCreated={vi.fn()} />,
+    );
+    // One submit serves Name, Approvals and Review: before Review it is "Next", unmarked.
+    expect(container.querySelector('[data-guide-target="create-safe"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(container.querySelector('[data-guide-target="create-safe"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const marked = container.querySelectorAll('[data-guide-target="create-safe"]');
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toBe(screen.getByRole("button", { name: "Create Safe" }));
   });
 
   it("the email, networks and nickname panels keep their targets", () => {

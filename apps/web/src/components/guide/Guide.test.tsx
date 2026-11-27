@@ -434,4 +434,78 @@ describe("Guide", () => {
     });
     await waitFor(() => expect(screen.queryByRole("button", { name: "Back to guide" })).toBeNull());
   });
+
+  it.each(["changes", "drops"])(
+    "clears the paused highlight when the highlighted control %s its marker",
+    async (how) => {
+      // A wizard can reuse one button across steps — the spotlight belongs to the marker
+      // the step pointed at, not to whichever action the same node now offers.
+      render(page(<><button data-guide-target="overview-balances">Reused control</button><GuideButton /></>));
+      fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+      fireEvent.click(screen.getByRole("button", { name: "Show on page" }));
+      expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+      act(() => {
+        const el = screen.getByRole("button", { name: "Reused control" });
+        if (how === "changes") el.setAttribute("data-guide-target", "create-safe");
+        else el.removeAttribute("data-guide-target");
+      });
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Back to guide" })).toBeNull());
+    },
+  );
+
+  it("clears the paused highlight when a containing details closes", async () => {
+    render(page(<>
+      <details open>
+        <summary>Other options</summary>
+        <button data-guide-target="overview-balances">Balances card</button>
+      </details>
+      <GuideButton />
+    </>));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show on page" }));
+    expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+    act(() => {
+      document.querySelector("details")!.removeAttribute("open");
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to guide" })).toBeNull());
+  });
+
+  it("keeps the paused highlight on a details' own summary when the details closes", async () => {
+    render(page(<>
+      <details open>
+        <summary data-guide-target="overview-balances">More about balances</summary>
+        <p>Hidden while closed</p>
+      </details>
+      <GuideButton />
+    </>));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show on page" }));
+    expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+    // The summary stays rendered when its details closes, so the spotlight must stay too.
+    await act(async () => {
+      document.querySelector("details")!.removeAttribute("open");
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+  });
+
+  it("offers 'Show on page' only while the control's details is open", async () => {
+    render(page(<>
+      <details>
+        <summary>Other options</summary>
+        <button data-guide-target="overview-balances">Balances card</button>
+      </details>
+      <GuideButton />
+    </>));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    expect(screen.queryByRole("button", { name: "Show on page" })).toBeNull();
+    act(() => {
+      document.querySelector("details")!.setAttribute("open", "");
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Show on page" })).toBeTruthy());
+    act(() => {
+      document.querySelector("details")!.removeAttribute("open");
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Show on page" })).toBeNull());
+  });
 });
