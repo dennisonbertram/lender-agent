@@ -9,6 +9,7 @@ import { SignInCard } from "./SignInCard";
 let connected = false;
 let session: { address: string } | null = null;
 let sessionLoading = false;
+let hasFreshSession = true;
 type C = { id: string; name: string; type?: string; icon?: string };
 let connectorList: C[] = [{ id: "injected", name: "Injected" }];
 const connect = vi.fn();
@@ -18,7 +19,7 @@ vi.mock("wagmi", () => ({
 }));
 const signIn = vi.fn(() => Promise.resolve({ address: "0x1" }));
 let signInError: Error | null = null;
-vi.mock("@/client/auth/useSession", () => ({ useSession: () => ({ session, loading: sessionLoading, signIn, signingIn: false, signInError }) }));
+vi.mock("@/client/auth/useSession", () => ({ useSession: () => ({ session, loading: sessionLoading, hasFreshSession, signIn, signingIn: false, signInError }) }));
 
 afterEach(() => {
   cleanup();
@@ -26,6 +27,7 @@ afterEach(() => {
   connected = false;
   session = null;
   sessionLoading = false;
+  hasFreshSession = true;
   connect.mockClear();
   signIn.mockClear();
   signInError = null;
@@ -55,6 +57,15 @@ describe("SignInCard", () => {
     render(<SignInCard returning />);
     expect(screen.getByRole("heading", { name: "Sign in to continue" })).toBeTruthy();
     expect(screen.getByText("You will go back to the page you opened.")).toBeTruthy();
+  });
+  it("hides the returning guide while a cached signed-out session is being rechecked", () => {
+    session = null;
+    sessionLoading = false;
+    hasFreshSession = false;
+    const { container } = render(<SignInCard returning />);
+    expect(container.querySelector('[data-guide-intro="welcome"]')).toBeNull();
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
   });
   it("keeps the default heading otherwise", () => {
     connected = false;

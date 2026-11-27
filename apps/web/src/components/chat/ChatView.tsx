@@ -126,8 +126,11 @@ function Session({ address, initial, placeholder, placement, contextualHelpOnly,
   );
 }
 
-/** The message list and composer for one Safe: loads the stored thread, then chats. Shared by the page and the docked panel. */
-export function ChatBody({ address, placeholder, placement, contextualHelpOnly }: { address: string; placeholder: string; placement?: ProposalPlacement; contextualHelpOnly?: boolean }) {
+/** The message list and composer for one Safe: loads the stored thread, then chats. Shared by the page and the docked panel.
+    `introTopicId` lets the page mount the feature's guide intro — but only once the thread is
+    loaded and access is confirmed, so the explanation never flashes ahead of (or instead of)
+    a denied or failed destination. */
+export function ChatBody({ address, placeholder, placement, contextualHelpOnly, introTopicId }: { address: string; placeholder: string; placement?: ProposalPlacement; contextualHelpOnly?: boolean; introTopicId?: string }) {
   const { agentOn } = useShell();
   const queryClient = useQueryClient();
   const [deniedAddress, setDeniedAddress] = useState<string | null>(null);
@@ -185,7 +188,12 @@ export function ChatBody({ address, placeholder, placement, contextualHelpOnly }
       </>
     );
   }
-  return <Session address={address} initial={thread.data} placeholder={placeholder} placement={placement} contextualHelpOnly={contextualHelpOnly} onForbidden={onForbidden} />;
+  return (
+    <>
+      {introTopicId && <GuideIntro topicId={introTopicId} />}
+      <Session address={address} initial={thread.data} placeholder={placeholder} placement={placement} contextualHelpOnly={contextualHelpOnly} onForbidden={onForbidden} />
+    </>
+  );
 }
 
 /** Ask the agent: the full-screen chat page. */
@@ -200,8 +208,7 @@ export function ChatView({ address }: { address: string }) {
           <SafeLine />
         </div>
       </div>
-      <GuideIntro topicId="chat" />
-      <ChatBody address={address} placeholder="Ask anything, or say how much you need" />
+      <ChatBody address={address} placeholder="Ask anything, or say how much you need" introTopicId="chat" />
     </div>
   );
 }

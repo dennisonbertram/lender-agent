@@ -5,11 +5,12 @@ import { NetworkChip } from "@/components/common";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AddressText } from "@/components/ui/address";
+import { Spinner } from "@/components/ui/spinner";
 import { shortAddress } from "@/lib/address";
 import { formatAddress } from "@/lib/explorer";
 import { usd } from "@/lib/format";
 import { approvalsSummary } from "@/lib/owners";
-import { safeNetworkName } from "@/lib/safe-create";
+import { safeNetworkName, SERVED_CHAIN_IDS } from "@/lib/safe-create";
 import { CHAIN_NAME, type ChainId } from "@/shared/types";
 import { GuideIntro } from "@/components/guide/Guide";
 import { AddSafeForm } from "./AddSafeForm";
@@ -22,6 +23,7 @@ export type FoundSafeCard = { address: string; name?: string; threshold: number;
   assets?: { symbol: string; amount: number }[];
   owners?: { address: string; ens?: string }[];
 };
+type NetworkFreshness = Record<number, "fresh" | "stale" | "unavailable">;
 
 /** A Safe the user saved before, offered again when the wallet lookup found nothing new. `pendingSetup` means its in-app creation is not usable yet; `pendingChainIds` are the recorded networks still not deployed (empty when only indexing is behind). */
 export type KnownSafeCard = { address: string; name?: string; pendingSetup?: boolean; chainIds?: number[]; pendingChainIds?: number[]; availableChainIds?: number[]; openSafeChainIds?: number[]; discovery?: FoundSafeCard };
@@ -135,12 +137,12 @@ function resolveApprovalSnapshot(safe: FoundSafeCard | undefined, verifiedChainI
   return { chainId, threshold: snapshot?.threshold ?? legacyFirst?.threshold, ownerCount: snapshot?.ownerCount ?? legacyFirst?.ownerCount };
 }
 
-function approvalLabel(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
+function approvalLabel(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null, qualifyNetwork = false) {
   const { chainId, threshold, ownerCount } = resolveApprovalSnapshot(safe, verifiedChainIds, selectedChainId);
   const name = chainId === undefined ? undefined : chainChipId(chainId);
   if (threshold === undefined || ownerCount === undefined) return `Approval details unavailable${name ? ` on ${name}` : " until a network is verified"}.`;
   const summary = ownerCount === 1 ? approvalsSummary(1, 1) : `${threshold} of ${ownerCount} owners must approve each transaction`;
-  return verifiedChainIds.length > 1 ? `Approvals on ${name ?? "the selected network"}: ${summary}` : summary;
+  return verifiedChainIds.length > 1 || qualifyNetwork ? `Approvals on ${name ?? "the selected network"}: ${summary}` : summary;
 }
 
 function resolveDetailsChainId(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
@@ -160,30 +162,16 @@ function supportedBalanceAmount(value: number) {
   return usd(value, value > 0 && value < 1 ? 2 : 0);
 }
 
-function supportedBalanceDetails(safe: FoundSafeCard) {
+function supportedBalanceDetails(safe: FoundSafeCard, discoveryComplete = true) {
   if (safe.balanceUsd === undefined) return "Balance unavailable";
   const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
   const networks = balanceChainIds.map(chainChipId).join(" and ");
-  const complete = hasCompleteBalanceCoverage(safe);
+  const complete = discoveryComplete && hasCompleteBalanceCoverage(safe);
   const hasPositiveAsset = safe.assets?.some((asset) => asset.amount > 0) ?? false;
   if (safe.balanceUsd === 0 && !hasPositiveAsset && complete) return "No supported funds found.";
-  if (!complete) return `found on ${networks || "the reported networks"}. Other balances are unavailable.`;
+  if (!complete) return `found on ${networks || "the reported networks"}. ${discoveryComplete ? "Other balances are unavailable." : "Other networks haven’t been checked yet."}`;
   if (balanceChainIds.length > 1) return `Total across ${networks}`;
   return "";
-}
-
-function supportedBalanceSummary(safe: FoundSafeCard, includeSingleNetwork = false) {
-  if (safe.balanceUsd === undefined) return "Supported balance unavailable.";
-  const details = supportedBalanceDetails(safe);
-  if (details === "No supported funds found.") return details;
-  const amount = supportedBalanceAmount(safe.balanceUsd);
-  if (details.startsWith("found on ")) return `Supported balance ${amount} ${details}`;
-  if (details.startsWith("Total across ")) return `Supported balance ${amount}. ${details}`;
-  if (includeSingleNetwork) {
-    const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
-    if (balanceChainIds.length === 1) return `Supported balance ${amount} on ${chainChipId(balanceChainIds[0])}`;
-  }
-  return `Supported balance ${amount}`;
 }
 
 /** The networks ownership is verified on, as names with their marks — or the honest fallback. */
@@ -193,38 +181,6 @@ function VerifiedNetworks({ ids }: { ids: number[] }) {
       <span>Verified ownership on{" "}</span>{ids.map((id, index) => <span key={id} className="inline-flex items-center gap-1">{index > 0 && " and "}<NetworkChip id={chainChipId(id)} className="px-1.5 py-0" /></span>)}
     </span>
   ) : <span className="text-xs text-muted-foreground">Network unavailable.</span>;
-}
-
-/** Shows network membership separately from the exact approval/signer snapshot and balance coverage.
-    `showVerified: false` drops the membership sentence when the tile's face already carries it. */
-function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wallet, showApproval = true, showBalanceAmount = false, showVerified = true }: {
-  address: string;
-  safe?: FoundSafeCard;
-  verifiedChainIds: number[];
-  selectedChainId?: number | null;
-  wallet?: string;
-  showApproval?: boolean;
-  showBalanceAmount?: boolean;
-  showVerified?: boolean;
-}) {
-  const { detailChainId, owners } = resolveDetails(safe, verifiedChainIds, selectedChainId);
-  const { threshold, ownerCount } = resolveApprovalSnapshot(safe, verifiedChainIds, selectedChainId);
-  const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
-  const balanceChainIds = safe ? safe.balanceChainIds ?? safe.chainIds : [];
-  const hasDistinctBalanceCoverage = safe && verifiedChainIds.length > 1;
-  const balanceSummary = safe && showBalanceAmount ? supportedBalanceSummary(safe, true) : undefined;
-  const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
-  const detailsLabel = detailsToggleLabel(content, name, verifiedChainIds, selectedChainId);
-  return (
-    <div className="flex flex-col gap-1.5">
-      {showVerified && <VerifiedNetworks ids={verifiedChainIds} />}
-      {showApproval && <span className="text-xs text-muted-foreground">{approvalLabel(safe, verifiedChainIds, selectedChainId)}</span>}
-      {(showBalanceAmount || hasDistinctBalanceCoverage) && safe && (showBalanceAmount
-        ? <span className="text-xs text-muted-foreground">{balanceSummary}</span>
-        : balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>)}
-      <CardDetails address={address} chainId={detailChainId} owners={owners} wallet={wallet} label={detailsLabel} />
-    </div>
-  );
 }
 
 /** One bottom action row per tile: the pick action plus an independently expandable details
@@ -263,95 +219,155 @@ function TileTitle({ safe }: { safe: { name?: string; address: string } }) {
   );
 }
 
-/** A compact found-Safe tile: identity, balance and verified networks up front; approval
-    policy, balance coverage, assets, address and signers behind the details disclosure. */
-function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
-  safe: FoundSafeCard;
+/** One pickable row of "Your Safes", keyed by the Safe's lowercase address: `found` is the
+    live discovery record, `saved` the earlier saved-list entry. */
+type PickerRow = { key: string; address: string; name?: string; found?: FoundSafeCard; saved?: KnownSafeCard };
+
+/** A row's tile: both faces live in one component so a saved card keeps its place and its
+    disclosure state while discovery verifies it into a found one. */
+function SafeTile({ row, wallet, selectedChainId, busy, discoveryComplete, freshnessByChainId, ownershipPendingByChainId, ownershipStaleByChainId, balancePendingAddresses, balanceStaleByChainId, savedFresh, staleAddresses, pendingAddresses, onPick, onResume }: {
+  row: PickerRow;
   wallet?: string;
   selectedChainId?: number | null;
   busy?: boolean;
+  discoveryComplete: boolean;
+  freshnessByChainId?: NetworkFreshness;
+  ownershipPendingByChainId?: Record<number, string[]>;
+  ownershipStaleByChainId?: Record<number, string[]>;
+  balancePendingAddresses?: string[];
+  balanceStaleByChainId?: Record<number, string[]>;
+  savedFresh: boolean;
+  staleAddresses?: string[];
+  pendingAddresses?: string[];
   onPick: (address: string) => void;
+  onResume?: (address: string) => void;
 }) {
-  const { detailChainId, owners } = resolveDetails(s, s.chainIds, selectedChainId);
-  const { threshold, ownerCount } = resolveApprovalSnapshot(s, s.chainIds, selectedChainId);
+  const s = row.found ?? row.saved?.discovery;
+  const allVerified = s
+    ? [...new Set([...s.chainIds, ...(row.saved?.availableChainIds ?? [])])]
+    : row.saved?.availableChainIds ?? row.saved?.chainIds ?? [];
+  const discoveredIds = s?.discoveredChainIds ?? s?.chainIds ?? [];
+  const staleSavedIds = !savedFresh ? allVerified.filter((id) => !discoveredIds.includes(id)) : [];
+  const perChainOwnershipAvailable = ownershipPendingByChainId !== undefined || ownershipStaleByChainId !== undefined;
+  const legacyAddressStale = !!s && !perChainOwnershipAvailable && (staleAddresses ?? []).some((address) => same(address, s.address));
+  const legacyAddressPending = !!s && !perChainOwnershipAvailable && (pendingAddresses ?? []).some((address) => same(address, s.address));
+  const staleNetworkIds = allVerified.filter((id) => discoveredIds.includes(id) && (ownershipStaleByChainId
+    ? ownershipStaleByChainId[id]?.some((address) => same(address, row.address))
+    : freshnessByChainId?.[id] === "stale"));
+  const pendingNetworkIds = allVerified.filter((id) => discoveredIds.includes(id) && ownershipPendingByChainId?.[id]?.some((address) => same(address, row.address)));
+  const addressStale = legacyAddressStale;
+  const addressPending = legacyAddressPending;
+  const balancePerChainAvailable = balanceStaleByChainId !== undefined || balancePendingAddresses !== undefined;
+  const balancePending = !!s && (balancePendingAddresses
+    ? balancePendingAddresses.some((address) => same(address, s.address))
+    : !balancePerChainAvailable && (pendingAddresses ?? []).some((address) => same(address, s.address)));
+  const balanceStaleIds = allVerified.filter((id) => balanceStaleByChainId
+    ? balanceStaleByChainId[id]?.some((address) => same(address, row.address))
+    : !perChainOwnershipAvailable && (staleAddresses ?? []).some((address) => same(address, row.address)));
+  const staleIds = [...new Set([...staleNetworkIds, ...staleSavedIds])];
+  const verified = addressStale || addressPending ? [] : allVerified.filter((id) => !staleIds.includes(id) && !pendingNetworkIds.includes(id));
+  const staleSelected = selectedChainId !== null && selectedChainId !== undefined && (staleIds.includes(selectedChainId) || pendingNetworkIds.includes(selectedChainId));
+  const detailIds = staleSelected || addressStale || addressPending ? [] : verified;
+  const { detailChainId, owners } = resolveDetails(s, detailIds, selectedChainId);
+  const { threshold, ownerCount } = resolveApprovalSnapshot(s, detailIds, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
-  const balanceChainIds = s.balanceChainIds ?? s.chainIds;
-  const balanceDetails = supportedBalanceDetails(s);
+  const balanceChainIds = s ? s.balanceChainIds ?? s.chainIds : [];
+  const balanceDetails = s && balanceStaleIds.length === 0 && !addressStale && !addressPending && !balancePending ? supportedBalanceDetails(s, discoveryComplete) : "";
+  const setup = row.saved?.pendingSetup ? row.saved : undefined;
+  const setupPending = setup?.pendingChainIds ?? setup?.chainIds ?? [];
+  const setupDone = (setup?.chainIds ?? []).filter((id) => !setupPending.includes(id));
   const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   return (
     <li className={tileClass}>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <TileTitle safe={s} />
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-xs text-muted-foreground">Supported balance</span>{" "}
-          {s.balanceUsd === undefined ? (
-            <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
-          ) : (
-            <span className="text-lg font-semibold tabular-nums">{supportedBalanceAmount(s.balanceUsd)}</span>
-          )}
-        </div>
-        {s.balanceUsd !== undefined && balanceDetails && <span className={cn("-mt-1 text-xs", balanceDetails === "No supported funds found." ? "text-warning-text" : "text-muted-foreground")}>
-          {" "}{balanceDetails}
-        </span>}
-        <VerifiedNetworks ids={s.chainIds} />
+        <TileTitle safe={row} />
+        {setup && selectedChainId !== null && selectedChainId !== undefined && !setup.availableChainIds?.includes(selectedChainId) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
+        {setup && <span className="text-xs text-muted-foreground">{setupPending.length > 0
+          ? <>Setup not finished{setupDone.length > 0 && <> — done on {setupDone.map(chainChipId).join(", ")}</>} — finish on {setupPending.map(chainChipId).join(", ")}. Nothing is paid again.</>
+          : "Setup not finished — the Safe service has not listed it yet. Nothing is paid again."}</span>}
+        {s ? (
+          <>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="text-xs text-muted-foreground">{balanceStaleIds.length > 0 || balancePending || addressStale || addressPending ? "Last known supported balance" : "Supported balance"}</span>{" "}
+              {s.balanceUsd === undefined ? (
+                <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
+              ) : (
+                <span className="text-lg font-semibold tabular-nums">{supportedBalanceAmount(s.balanceUsd)}</span>
+              )}
+            </div>
+            {s.balanceUsd !== undefined && balanceDetails && <span className={cn("-mt-1 text-xs", balanceDetails === "No supported funds found." ? "text-warning-text" : "text-muted-foreground")}>
+              {" "}{balanceDetails}
+            </span>}
+          </>
+        ) : (
+          <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
+        )}
+        {(verified.length > 0 || (allVerified.length === 0 && !addressPending)) && <VerifiedNetworks ids={verified} />}
+        {pendingNetworkIds.length > 0 && <span className="text-xs text-muted-foreground">Checking ownership on {pendingNetworkIds.map(chainChipId).join(" and ")}.</span>}
+        {addressPending && <span className="text-xs text-muted-foreground">Checking this Safe again. Ownership details are from the last successful check.</span>}
+        {(balancePending || addressPending) && <span className="text-xs text-muted-foreground">Checking the balance on the verified networks.</span>}
+        {staleNetworkIds.length > 0 && <span className="text-xs text-warning-text">Ownership and approval details on {staleNetworkIds.map(chainChipId).join(" and ")} are from the last successful check.</span>}
+        {staleSavedIds.length > 0 && <span className="text-xs text-warning-text">Saved ownership was last checked on {staleSavedIds.map(chainChipId).join(" and ")}. The saved Safe list refresh failed.</span>}
+        {balanceStaleIds.length > 0 && <span className="text-xs text-warning-text">Balance values on {balanceStaleIds.map(chainChipId).join(" and ")} are from the last successful check.</span>}
+        {addressStale && <span className="text-xs text-warning-text">Last known ownership details are shown because this Safe could not be rechecked.</span>}
       </div>
       <TileActions
-        action={<Button size="sm" aria-label={openSafeLabel(s)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(s.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
-        label={detailsToggleLabel(content, name, s.chainIds, selectedChainId)}
+        action={<>
+          {setup && <Button size="sm" disabled={busy} onClick={() => onResume?.(row.address)}>Finish setting up</Button>}
+          {(!setup || (setup.openSafeChainIds?.length ?? 0) > 0) && <Button size="sm" aria-label={openSafeLabel(row)} data-guide-target={!busy && (!setup || selectedChainId === null || selectedChainId === undefined || setup.openSafeChainIds?.includes(selectedChainId)) ? "choose-safe" : undefined} disabled={busy} onClick={() => onPick(row.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
+        </>}
+        label={detailsToggleLabel(content, name, allVerified, selectedChainId)}
       >
-        <span>{approvalLabel(s, s.chainIds, selectedChainId)}</span>
-        {s.assets && s.assets.length > 0 && <span>{balanceChainIds.length > 0
+        <span>{staleSelected ? `Approval details unavailable on ${chainChipId(selectedChainId!)}` : approvalLabel(s, detailIds, selectedChainId, allVerified.length > 1)}</span>
+        {s?.assets && s.assets.length > 0 && <span>{(balanceStaleIds.length > 0 || balancePending || addressPending) && "Last known token amounts. "}{balanceChainIds.length > 0
           ? `Tokens ${balanceChainIds.length === 1 ? "on" : "across"} ${balanceChainIds.map(chainChipId).join(" and ")}`
           : "Tokens (source networks unreported)"}: {s.assets.map((a) => `${amountText(a.amount)} ${a.symbol}`).join(" · ")}</span>}
-        <AddressText address={s.address} chainId={detailChainId} />
+        <AddressText address={row.address} chainId={detailChainId} />
         {owners && owners.length > 0 && <Signers owners={owners} wallet={wallet} chainId={detailChainId} />}
       </TileActions>
     </li>
   );
 }
 
-/** A compact saved-Safe tile: it re-verifies on open, so nothing beyond identity, the saved
-    note and networks sits up front. */
-function SavedTile({ safe: k, wallet, selectedChainId, busy, onPick }: {
-  safe: KnownSafeCard;
-  wallet?: string;
-  selectedChainId?: number | null;
-  busy?: boolean;
-  onPick: (address: string) => void;
-}) {
-  const verified = k.availableChainIds ?? k.chainIds ?? [];
-  const { detailChainId } = resolveDetails(undefined, verified, selectedChainId);
-  const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
-  return (
-    <li className={tileClass}>
-      <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <TileTitle safe={k} />
-        <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
-        <VerifiedNetworks ids={verified} />
-      </div>
-      <TileActions
-        action={<Button size="sm" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
-        label={detailsToggleLabel("address", name, verified, selectedChainId)}
-      >
-        <span>{approvalLabel(undefined, verified, selectedChainId)}</span>
-        <AddressText address={k.address} chainId={detailChainId} />
-      </TileActions>
-    </li>
-  );
+/** The order "Your Safes" rows were first shown in: a card already on screen never moves
+    while more of the wallet's Safes arrive or a saved card verifies into a found one. */
+function useShownOrder(keys: string[]): string[] {
+  const [order, setOrder] = useState(keys);
+  const additions = keys.filter((key) => !order.includes(key));
+  if (additions.length === 0) return order;
+  const next = [...order, ...additions];
+  setOrder(next);
+  return next;
 }
 
 /** The Safe step of the found path (r31). */
-export function SafeStep({ wallet, found, known, loading, savedLoading, savedLookupFailed, createDisabled, lookupFailed, existing, busy, error, onPick, onAdd, onCreate, onRetry, onResume, onUseAnotherWallet }: {
+export function SafeStep({ wallet, found, known, loading, lookupPending, discoveryIncomplete, savedLoading, savedLookupFailed, savedFresh, staleAddresses, pendingAddresses, ownershipPendingByChainId, ownershipStaleByChainId, balancePendingAddresses, balanceStaleByChainId, accountMismatch, freshnessByChainId, createDisabled, lookupFailed, existing, busy, error, onPick, onAdd, onCreate, onRetry, onResume, onUseAnotherWallet }: {
   /** The signed-in wallet: marked "You" among the signers. */
   wallet?: string;
   found: FoundSafeCard[];
   /** Safes saved earlier: still offered when the wallet lookup fails or finds nothing new. */
   known?: KnownSafeCard[];
   loading?: boolean;
+  /** No owned Safe request has completed yet, including paused or offline queries. */
+  lookupPending?: boolean;
+  /** At least one discovery network has not completed, including paused queries after a partial response. */
+  discoveryIncomplete?: boolean;
   /** The user's saved Safe list is being checked independently of wallet discovery. */
   savedLoading?: boolean;
   /** The saved Safe list failed; an empty result is not known yet. */
   savedLookupFailed?: boolean;
+  /** The saved-list data currently belongs to a successful refresh. */
+  savedFresh?: boolean;
+  /** Previously displayed rows retained after an indeterminate ownership recheck. */
+  staleAddresses?: string[];
+  pendingAddresses?: string[];
+  ownershipPendingByChainId?: Record<number, string[]>;
+  ownershipStaleByChainId?: Record<number, string[]>;
+  balancePendingAddresses?: string[];
+  balanceStaleByChainId?: Record<number, string[]>;
+  /** Server rejected a wallet-bound lookup because the active session belongs to another account. */
+  accountMismatch?: boolean;
+  freshnessByChainId?: NetworkFreshness;
   /** Do not offer new Safe creation until the saved list has loaded. */
   createDisabled?: boolean;
   /** The lookup of the wallet's Safes failed: do not claim there are none. */
@@ -373,31 +389,43 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
 }) {
   const [adding, setAdding] = useState(false);
   const [networkFilter, setNetworkFilter] = useState<number | null>(null);
-  const none = !loading && found.length === 0;
+  const none = !loading && !lookupPending && found.length === 0;
   const savedBusy = !!savedLoading;
   const savedFailed = !!savedLookupFailed;
-  const empty = none && !lookupFailed && !savedBusy && !savedFailed && (known?.length ?? 0) === 0;
-  // Funded Safes first; the rest keep their order.
+  const empty = none && !discoveryIncomplete && !lookupFailed && !savedBusy && !savedFailed && (known?.length ?? 0) === 0;
+  // Funded Safes first; the rest keep their order. This ranks a batch when it first shows —
+  // once a card is on screen it keeps its place instead of re-sorting under the user.
   const sorted = [...found].sort((x, y) => Number((y.balanceUsd ?? 0) > 0) - Number((x.balanceUsd ?? 0) > 0));
   const networks = [...new Set([
+    ...SERVED_CHAIN_IDS,
     ...found.flatMap((safe) => safe.chainIds),
     ...(known ?? []).flatMap((safe) => safe.pendingSetup ? safe.availableChainIds ?? [] : safe.chainIds ?? []),
   ])];
-  const pendingAddresses = new Set((known ?? []).filter((safe) => safe.pendingSetup).map((safe) => safe.address.toLowerCase()));
-  const visibleFound = sorted.filter((safe) => !pendingAddresses.has(safe.address.toLowerCase()) && (networkFilter === null || safe.chainIds.includes(networkFilter)));
   const foundAddresses = new Set(found.map((safe) => safe.address.toLowerCase()));
-  const visibleKnown = (known ?? []).filter((safe) => safe.pendingSetup || !foundAddresses.has(safe.address.toLowerCase()))
-    .filter((safe) => safe.pendingSetup || networkFilter === null || !!safe.chainIds?.includes(networkFilter));
+  const knownByAddress = new Map((known ?? []).map((safe) => [safe.address.toLowerCase(), safe]));
+  const foundRows: PickerRow[] = (accountMismatch ? [] : sorted).map((safe) => {
+    const key = safe.address.toLowerCase();
+    const saved = knownByAddress.get(key);
+    return { key, address: safe.address, name: saved?.pendingSetup ? saved.name ?? safe.name : safe.name, found: safe, ...(saved?.pendingSetup ? { saved } : {}) };
+  });
+  const shownKnown = accountMismatch ? [] : (known ?? []).filter((safe) => !foundAddresses.has(safe.address.toLowerCase()));
+  const savedRows: PickerRow[] = shownKnown.map((safe) => ({ key: safe.address.toLowerCase(), address: safe.address, name: safe.name, saved: safe }));
+  const rowsByKey = new Map([...foundRows, ...savedRows].map((row) => [row.key, row]));
+  // Lowercase address keys: a saved card that discovery later verifies keeps the same key,
+  // and cards keep their first-shown order while later batches arrive.
+  const rows = useShownOrder([...foundRows, ...savedRows].map((row) => row.key))
+    .map((key) => rowsByKey.get(key)).filter((row): row is PickerRow => !!row);
+  const visibleRows = accountMismatch ? [] : networkFilter === null ? rows
+    : rows.filter((row) => row.saved?.pendingSetup || (row.found ? row.found.chainIds : row.saved?.chainIds ?? []).includes(networkFilter));
+  const visibleFound = visibleRows.filter((row) => row.found);
   const hasUnknownNetwork = sorted.some((safe) => safe.chainIds.length === 0)
     || (known ?? []).some((safe) => !safe.pendingSetup && !safe.chainIds?.length && !foundAddresses.has(safe.address.toLowerCase()));
-  const pendingKnown = visibleKnown.filter((safe) => safe.pendingSetup);
-  const savedKnown = visibleKnown.filter((safe) => !safe.pendingSetup);
-  const hasPendingSetup = pendingKnown.length > 0;
+  const hasPendingSetup = visibleRows.some((row) => row.saved?.pendingSetup);
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
         <h1 tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none sm:text-3xl">{hasPendingSetup ? "Finish setting up your Safe" : visibleFound.length > 0 ? "Choose a Safe" : "Your Safe"}</h1>
-        {!adding && (networks.length > 1 || networkFilter !== null) && <fieldset className="flex min-w-0 flex-col gap-2">
+        {!adding && <fieldset className="flex min-w-0 flex-col gap-2">
           <legend className="text-xs font-medium text-muted-foreground">Show Safes on</legend>
           <div className="flex flex-wrap gap-2">
             <button type="button" aria-pressed={networkFilter === null} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === null ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(null)}><NetworkChip id="All networks" className="rounded-none border-0 px-0 py-0 text-current" /></button>
@@ -406,74 +434,41 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
         </fieldset>}
       </div>
       <GuideIntro topicId="choose-safe" compact />
+      {accountMismatch && <p role="alert" className="text-sm">Your wallet session changed while Safes were loading. Reload or sign in again to check this wallet.</p>}
       {empty && (
         <p className="max-w-2xl text-sm">
           {wallet ? <>No Safe found for <AddressText address={wallet} />. </> : "No Safe found for this wallet. "}
           Is this the wallet you use for your Safe? If not, use another wallet. You can also create a new Safe or add one you own by its address.
         </p>
       )}
-      {lookupFailed && !adding && (
-        <div className="flex w-full max-w-md flex-col gap-2">
-          <p className="text-sm">We could not look up your Safes. Try again, or use one you saved before.</p>
-          {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
-        </div>
-      )}
-      {savedBusy && !adding && <p role="status" className="text-xs text-muted-foreground">Checking your saved Safes…</p>}
-      {savedFailed && !adding && !lookupFailed && (
-        <div className="flex w-full max-w-md flex-col gap-2">
-          <p className="text-sm">We could not load your saved Safes. Retry to check for a setup you can continue.</p>
-          {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
-        </div>
-      )}
-      {loading && <p className="text-xs text-muted-foreground">Looking for your Safes…</p>}
       {!adding && (
         <>
-        {networkFilter !== null && visibleFound.length === 0 && visibleKnown.length === 0 && <p className="text-sm">{hasUnknownNetwork
+        {networkFilter !== null && visibleRows.length === 0 && !loading && !lookupPending && !discoveryIncomplete && !savedBusy && !lookupFailed && !savedFailed && <p className="text-sm">{hasUnknownNetwork
           ? <>No Safes with reported network information found on {chainChipId(networkFilter)}. Choose All networks to review Safes whose network is unavailable.</>
           : <>No Safes found on {chainChipId(networkFilter)}.</>}</p>}
-        {(pendingKnown.length > 0 || visibleFound.length > 0 || savedKnown.length > 0) && (
+        {visibleRows.length > 0 && (
         <div className={gridClass}>
-        {pendingKnown.length > 0 && (
-        <ul role="list" aria-label="Finish setting up" className="contents">
-          {pendingKnown.map((k) => (
-            <li key={k.address} className={tileClass}>
-              {(() => {
-                const pending = k.pendingChainIds ?? k.chainIds ?? [];
-                const done = (k.chainIds ?? []).filter((c) => !pending.includes(c));
-                return (
-                <div className="flex flex-col gap-1.5 p-4">
-                  <TileTitle safe={k} />
-                  {networkFilter !== null && !k.availableChainIds?.includes(networkFilter) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
-                  <span className="text-xs text-muted-foreground">
-                    {pending.length > 0
-                      ? <>Setup not finished{done.length > 0 && <> — done on {done.map(chainChipId).join(", ")}</>} — finish on {pending.map(chainChipId).join(", ")}. Nothing is paid again.</>
-                      : "Setup not finished — the Safe service has not listed it yet. Nothing is paid again."}
-                  </span>
-                  <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
-                  <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} showBalanceAmount />
-                  {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" aria-label={openSafeLabel(k)} data-guide-target={!busy && (networkFilter === null || k.openSafeChainIds.includes(networkFilter)) ? "choose-safe" : undefined} disabled={busy} onClick={() => onPick(k.address)}>
-                    Open Safe <ArrowRight data-icon="inline-end" aria-hidden />
-                  </Button>}
-                </div>
-                );
-              })()}
-            </li>
-          ))}
-        </ul>
-        )}
-        {(visibleFound.length > 0 || savedKnown.length > 0) && (
         <ul role="list" aria-label="Your Safes" className="contents">
-          {visibleFound.map((s) => (
-            <FoundTile key={s.address} safe={s} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
-          ))}
-          {savedKnown.map((k) => (
-            <SavedTile key={k.address} safe={k} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
+          {visibleRows.map((row) => (
+            <SafeTile key={row.key} row={row} wallet={wallet} selectedChainId={networkFilter} busy={busy} discoveryComplete={!loading && !discoveryIncomplete && !lookupFailed} freshnessByChainId={freshnessByChainId} ownershipPendingByChainId={ownershipPendingByChainId} ownershipStaleByChainId={ownershipStaleByChainId} balancePendingAddresses={balancePendingAddresses} balanceStaleByChainId={balanceStaleByChainId} savedFresh={savedFresh ?? true} staleAddresses={staleAddresses} pendingAddresses={pendingAddresses} onPick={onPick} onResume={onResume} />
           ))}
         </ul>
-        )}
         </div>
         )}
         </>
+      )}
+      {!adding && (savedBusy || loading || lookupPending) && <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">{savedBusy || loading ? <Spinner /> : null} {savedBusy && loading ? "Checking your saved Safes and looking for your Safes…" : savedBusy ? "Checking your saved Safes…" : loading ? "Looking for your Safes…" : lookupPending ? "Waiting for your wallet lookup to start. Check your connection. Safe creation is unavailable until a wallet result arrives." : "Looking for your Safes…"}</p>}
+      {!adding && (lookupFailed || savedFailed) && (
+        <div className="flex w-full max-w-md flex-col gap-2">
+          <p className="text-sm">{lookupFailed && savedFailed
+            ? "We could not look up your Safes or load your saved Safes. Try again."
+            : lookupFailed
+              ? found.length > 0
+                ? "We could not finish looking up your Safes. Some Safes may be missing. Try again, or use one you saved before."
+                : "We could not look up your Safes. Try again, or use one you saved before."
+              : "We could not load your saved Safes. Retry to check for a setup you can continue."}</p>
+          {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
+        </div>
       )}
       {adding ? (
         <AddSafeForm existing={existing} busy={busy} serverError={error} onSubmit={onAdd} onCancel={() => setAdding(false)} />

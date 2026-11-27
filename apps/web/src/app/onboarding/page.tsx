@@ -20,8 +20,8 @@ function Onboarding() {
   const { session, loading } = useSession();
   const signOut = useSignOut();
   const router = useRouter();
-  const owned = useOwnedSafes();
-  const mine = useSafes();
+  const owned = useOwnedSafes(session?.address);
+  const mine = useSafes(session?.address);
   const add = useAddSafe();
   const createApi = useCreateSafeApi();
   const [creating, setCreating] = useState(false);
@@ -31,10 +31,20 @@ function Onboarding() {
   useEffect(() => {
     if (!loading && !session) router.replace("/");
   }, [loading, session, router]);
-  if (loading || !session) return <OnboardingCard><p role="status" className="flex items-center gap-2 text-sm"><Spinner /> Checking your session…</p></OnboardingCard>;
 
   const bar = onboardingBar({ screen: "safe", path: creating ? "create" : "found", createStep });
+  // The session check and the picker share the wide shell and header, so first paint already
+  // has the final layout instead of a narrow card that later jumps wider.
+  const pickerHeader = bar ? <div className="min-w-0 max-w-md flex-1"><StepBar {...bar} variant="picker" /></div> : undefined;
+  if (loading || !session) {
+    return (
+      <OnboardingCard wide header={pickerHeader} guide={false}>
+        <p role="status" className="flex items-center gap-2 text-sm"><Spinner /> Checking your session…</p>
+      </OnboardingCard>
+    );
+  }
   const mineList = mine.data ?? [];
+  const accountMismatch = [owned.error, mine.error].some((error) => [401, 403, 409].includes((error as { status?: number } | null)?.status ?? 0));
   const names = new Map(mineList.map((s) => [s.address.toLowerCase(), s.name]));
   const displayName = (address: string, fallback?: string) => nicknameNames[address.toLowerCase()] ?? fallback;
   const go = (address: string, agent: boolean) => router.push(agent ? `/s/${address}/chat` : `/onboarding/agent?safe=${address}`);
@@ -74,21 +84,32 @@ function Onboarding() {
   }
 
   return (
-    <OnboardingCard wide header={bar ? <div className="min-w-0 max-w-md flex-1"><StepBar {...bar} variant="picker" /></div> : undefined}>
+    <OnboardingCard wide header={pickerHeader}>
       <SafeStep
         wallet={session.address}
         onCreate={() => { setResume(null); setCreating(true); }}
         onUseAnotherWallet={() => void signOut()}
         found={pickerRows.found}
         known={pickerRows.known}
-        loading={owned.isLoading}
-        lookupFailed={!!owned.error}
-        savedLoading={mine.isLoading}
-        savedLookupFailed={!!mine.error}
-        createDisabled={mine.isLoading || !!mine.error}
+        loading={owned.isLoading || owned.isFetching}
+        lookupPending={owned.pending && !owned.error}
+        discoveryIncomplete={owned.incomplete}
+        lookupFailed={!!owned.error && !owned.isFetching}
+        savedLoading={mine.isLoading || mine.isFetching || mine.isPending}
+        savedLookupFailed={!!mine.error && !mine.isFetching}
+        savedFresh={mine.data !== undefined && !mine.error}
+        accountMismatch={accountMismatch}
+        freshnessByChainId={owned.freshnessByChainId}
+        staleAddresses={owned.staleAddresses}
+        pendingAddresses={owned.pendingAddresses}
+        ownershipPendingByChainId={owned.ownershipPendingByChainId}
+        ownershipStaleByChainId={owned.ownershipStaleByChainId}
+        balancePendingAddresses={owned.balancePendingAddresses}
+        balanceStaleByChainId={owned.balanceStaleByChainId}
+        createDisabled={mine.isLoading || mine.isFetching || mine.isPending || !!mine.error || (owned.incomplete && !owned.error) || accountMismatch}
         existing={mineList.map((s) => s.address)}
-        busy={add.isPending}
-        error={add.error?.message ?? (owned.error ? "We could not look up your Safes. Add one by address." : null)}
+        busy={add.isPending || mine.isLoading}
+        error={add.error?.message ?? null}
         onPick={pick}
         onAdd={save}
         onRetry={() => { void owned.refetch(); void mine.refetch(); }}

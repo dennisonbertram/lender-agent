@@ -3,13 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/client/safes";
 
-const state = vi.hoisted(() => ({ error: null as unknown, data: undefined as unknown, list: undefined as unknown, shell: null as any, path: "/s/0xabc/loans/7", reserveCalls: [] as unknown[][] }));
+const state = vi.hoisted(() => ({ error: null as unknown, data: undefined as unknown, list: undefined as unknown, shell: null as any, path: "/s/0xabc/loans/7", listWallet: undefined as string | undefined, reserveCalls: [] as unknown[][] }));
 vi.mock("@/client/auth/useSession", () => ({ useSession: () => ({ session: { address: "0x5afe00000000000000000000000000000000beef" } }), useSignOut: () => vi.fn() }));
 vi.mock("@/client/reserve", () => ({ useReserve: (...args: unknown[]) => { state.reserveCalls.push(args); return { data: undefined }; } }));
 vi.mock("@/client/safes", async (orig) => ({
   ...(await orig<typeof import("@/client/safes")>()),
   useSafeSummary: () => ({ data: state.data, error: state.error }),
-  useSafes: () => ({ data: state.list }),
+  useSafes: (wallet?: string) => { state.listWallet = wallet; return { data: state.list }; },
 }));
 vi.mock("@/components/proposals/WrongWallet", () => ({ WrongWallet: ({ returnTo }: { returnTo?: string }) => <p data-wrong-wallet={returnTo}>This needs a different wallet</p> }));
 vi.mock("@/components/chat/ChatPanel", () => ({ ChatPanel: () => null }));
@@ -39,6 +39,23 @@ describe("Safe layout error states", () => {
     expect(html).not.toContain("secret page content");
   });
 
+  it("reserves the agent column beside the rail on non-chat pages, so a loaded shell keeps the same columns", () => {
+    state.error = null;
+    state.data = undefined;
+    state.path = "/s/0xabc";
+    try {
+      const overview = render(null);
+      // The docked chat column the shell paints at >=1100px must exist from first paint.
+      expect(overview).toContain("min-[1100px]");
+      state.path = "/s/0xabc/chat";
+      // The chat page is itself the agent: no second column is reserved or docked there.
+      const chat = render(null);
+      expect(chat).not.toContain("min-[1100px]");
+    } finally {
+      state.path = "/s/0xabc/loans/7";
+    }
+  });
+
   it("keeps the fallback top bar at the same frame position while loading becomes an error", () => {
     state.error = null;
     state.data = undefined;
@@ -49,6 +66,13 @@ describe("Safe layout error states", () => {
     expect(failed).toContain(framePosition);
   });
 
+  it("scopes the saved Safe list query to the signed-in wallet", () => {
+    state.error = null;
+    state.data = undefined;
+    state.listWallet = undefined;
+    render(null);
+    expect(state.listWallet).toBe("0x5afe00000000000000000000000000000000beef");
+  });
   it("401: asks to sign in, with a link to /", () => {
     const html = render(new ApiError(401, "unauthorized"));
     expect(html).toContain("Sign in to continue");

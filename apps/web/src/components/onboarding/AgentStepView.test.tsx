@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push }) }));
 
 let status: Record<string, unknown>;
 let safes: { address: string; name: string }[];
+let safesWallet: string | undefined;
 const WALLET = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 vi.mock("@/client/auth/useSession", () => ({ useSession: () => ({ session: { address: WALLET }, loading: false }) }));
 vi.mock("@/client/agent", () => ({
@@ -20,7 +21,7 @@ vi.mock("@/client/agent", () => ({
   useAddNetwork: () => ({ addNetwork: vi.fn(), adding: false, error: null, reset: vi.fn() }),
   useAddAgent: () => ({ add: (...args: unknown[]) => addAgent(...args), adding: false, progress: null, error: null, reset: vi.fn() }),
 }));
-vi.mock("@/client/safes", async (orig) => ({ ...(await orig<typeof import("@/client/safes")>()), useSafes: () => ({ data: safes }), useAddSafe: () => ({ mutate: vi.fn(), error: null }) }));
+vi.mock("@/client/safes", async (orig) => ({ ...(await orig<typeof import("@/client/safes")>()), useSafes: (wallet?: string) => { safesWallet = wallet; return { data: safes }; }, useAddSafe: () => ({ mutate: vi.fn(), error: null }) }));
 
 const on = { active: true, canChat: true, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: true }] };
 beforeEach(() => {
@@ -29,7 +30,8 @@ beforeEach(() => {
   push.mockClear();
   addAgent.mockReset().mockResolvedValue(on);
   safes = [];
-  status = { isPending: false, isFetchedAfterMount: true, data: on, error: null };
+  safesWallet = undefined;
+  status = { isPending: false, isFetchedAfterMount: true, isSuccess: true, isFetching: false, data: on, error: null };
 });
 afterEach(cleanup);
 
@@ -38,6 +40,43 @@ describe("AgentStepView", () => {
     render(<AgentStepView safeAddress={A} />);
     expect(replace).toHaveBeenCalledWith(`/s/${A}/chat`);
     expect(replace).toHaveBeenCalledTimes(1);
+  });
+  it("keeps cached active status out of the setup guide while mount revalidation runs", () => {
+    status = { ...status, isFetchedAfterMount: false, isFetching: true };
+    const view = render(<AgentStepView safeAddress={A} />);
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Lender agent can now suggest transactions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add Lender agent" })).toBeNull();
+
+    status = { ...status, isFetchedAfterMount: true, isFetching: false };
+    // The same mounted query completes its authoritative read.
+    view.rerender(<AgentStepView safeAddress={A} />);
+    expect(replace).toHaveBeenCalledWith(`/s/${A}/chat`);
+  });
+  it("hides setup for any cached status while its first fresh read is fetching", () => {
+    status = { isPending: false, isFetching: true, isFetchedAfterMount: false, isSuccess: true, data: {
+      active: false, canChat: false, eligibleChainIds: [8453], networks: [{ chainId: 8453, deployed: true, added: false }],
+    }, error: null };
+    const { container } = render(<AgentStepView safeAddress={A} />);
+    expect(container.querySelector('[data-guide-intro="agent"]')).toBeNull();
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Let Lender agent suggest transactions" })).toBeNull();
+  });
+  it("does not redirect from cached active data when the fresh ownership read fails", () => {
+    status = { isPending: false, isFetching: false, isFetchedAfterMount: true, isSuccess: false, data: on, error: new ApiError(403, "Denied") };
+    render(<AgentStepView safeAddress={A} />);
+    expect(screen.getByText("You are not an owner of this Safe")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+  it("hides the guide but keeps cached navigation available when revalidation is paused offline", () => {
+    status = { isPending: false, isFetching: false, isFetchedAfterMount: false, isSuccess: true, fetchStatus: "paused", data: on, error: null };
+    const { container } = render(<AgentStepView safeAddress={A} />);
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Open chat" })).toBeTruthy();
+  });
+  it("scopes the saved Safe list to the connected wallet", () => {
+    render(<AgentStepView safeAddress={A} />);
+    expect(safesWallet).toBe(WALLET);
   });
   it("never redirects from cached data", () => {
     status = { ...status, isFetchedAfterMount: false };

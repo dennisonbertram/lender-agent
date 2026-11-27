@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { useSession } from "@/client/auth/useSession";
 import { SignInCard } from "@/components/auth/SignInCard";
 import { GuideButton, GuideIntro } from "@/components/guide/Guide";
 import styles from "./borrower-home.module.css";
@@ -25,6 +26,11 @@ const steps = [
 ];
 
 export function BorrowerHome() {
+  const { session, loading, hasFreshSession } = useSession();
+  // A signed-in visitor is redirected to their Safes by HomeSessionRedirect; while the session
+  // check is in flight (or a session exists) this page is only a transit state, so the guide
+  // stays hidden until the check settles on signed out.
+  const settled = !loading && hasFreshSession && !session;
   return (
     <main className={styles.page}>
       <div className={styles.frame}>
@@ -36,7 +42,7 @@ export function BorrowerHome() {
           <nav className={styles.nav} aria-label="Main navigation">
             <a href="#how-it-works">How it works <ArrowDownRight aria-hidden="true" /></a>
             <a className={styles.navAction} href="#get-started">Get started <ArrowUpRight aria-hidden="true" /></a>
-            <GuideButton />
+            {settled && <GuideButton />}
           </nav>
         </header>
 
@@ -45,7 +51,7 @@ export function BorrowerHome() {
             <h1 id="hero-title">Borrow against<br /><em>your crypto.</em></h1>
             <p className={styles.intro}>Borrow digital dollars (USDC) in your Safe, a wallet whose owners approve transactions. Before you approve, see the estimated interest and when your collateral could be sold. Moving money to a bank is a separate step.</p>
             <SignInCard presentation="hero" className={styles.signIn} id="get-started" />
-            <GuideIntro topicId="welcome" />
+            {settled && <GuideIntro topicId="welcome" />}
           </div>
           <figure className={styles.heroArt}>
             <Image
