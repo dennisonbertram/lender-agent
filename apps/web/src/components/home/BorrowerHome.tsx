@@ -26,11 +26,11 @@ const steps = [
 ];
 
 export function BorrowerHome() {
-  const { session, loading } = useSession();
+  const { session, loading, hasFreshSession } = useSession();
   // A signed-in visitor is redirected to their Safes by HomeSessionRedirect; while the session
   // check is in flight (or a session exists) this page is only a transit state, so the guide
   // stays hidden until the check settles on signed out.
-  const settled = !loading && !session;
+  const settled = !loading && hasFreshSession && !session;
   return (
     <main className={styles.page}>
       <div className={styles.frame}>

@@ -202,6 +202,55 @@ describe("useOwnedSafes progressive discovery", () => {
     await waitFor(() => expect(result.current.partial).toBe(false), { timeout: 1000 });
     expect(result.current.error).toBeNull();
   });
+
+  it("shows a verified streamed neighbor immediately and keeps prior rows stale after a truncated response", async () => {
+    const SAFE_B = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0002";
+    const streamedSafe = { ...foundRow(8453), address: SAFE_B };
+    let stream = false;
+    let recovered = false;
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (stream && url.includes("chainId=8453")) {
+        expect(new Headers(init?.headers).get("accept")).toContain("application/x-ndjson");
+        expect(new Headers(init?.headers).get("x-known-safes")).toContain(SAFE_A);
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; } }), { headers: { "content-type": "application/x-ndjson" } }));
+      }
+      const rows = !stream && !recovered && url.includes("chainId=8453") ? [foundRow(8453)] : [];
+      return Promise.resolve(ownedOk(rows));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.data?.map((s) => s.address.toLowerCase())).toContain(SAFE_A.toLowerCase()), { timeout: 1000 });
+
+    stream = true;
+    act(() => { void result.current.refetch(); });
+    await waitFor(() => expect(controller).toBeDefined(), { timeout: 1000 });
+    controller!.enqueue(encoder.encode('{"type":"start"}\n'));
+    await waitFor(() => expect(result.current.incomplete).toBe(true), { timeout: 1000 });
+    controller!.enqueue(encoder.encode(`${JSON.stringify({ type: "candidate", complete: false, safe: streamedSafe })}\n`));
+    await waitFor(() => expect(result.current.data?.some((s) => s.address.toLowerCase() === SAFE_B.toLowerCase())).toBe(true), { timeout: 1000 });
+    expect(result.current.pendingAddresses.map((a) => a.toLowerCase())).toContain(SAFE_B.toLowerCase());
+    controller!.enqueue(encoder.encode(`${JSON.stringify({ type: "candidate", complete: true, safe: { ...streamedSafe, balanceUsd: 10 } })}\n`));
+    await waitFor(() => expect(result.current.pendingAddresses.map((a) => a.toLowerCase())).not.toContain(SAFE_B.toLowerCase()), { timeout: 1000 });
+    expect(result.current.pendingAddresses.map((a) => a.toLowerCase())).toContain(SAFE_A.toLowerCase());
+
+    controller!.close();
+    await waitFor(() => expect(result.current.error).toBeTruthy(), { timeout: 1000 });
+    expect(result.current.data?.some((s) => s.address.toLowerCase() === SAFE_A.toLowerCase())).toBe(true);
+    await waitFor(() => {
+      expect(result.current.staleAddresses.map((a) => a.toLowerCase())).toContain(SAFE_A.toLowerCase());
+      expect(result.current.partial).toBe(true);
+      expect(result.current.error).toBeTruthy();
+    }, { timeout: 1000 });
+
+    stream = false;
+    recovered = true;
+    await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.data).toEqual([]), { timeout: 1000 });
+    expect(result.current.staleAddresses).toEqual([]);
+  });
 });
 
 describe("useSafes wallet scoping", () => {

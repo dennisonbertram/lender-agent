@@ -20,6 +20,24 @@ const services = (over: Record<string, unknown> = {}, on: number[] = [8453]) => 
 }) as unknown as Services;
 
 describe("findOwnedSafesOnChain", () => {
+  it("emits a verified neighbor before a slower candidate finishes", async () => {
+    const SLOW = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0002" as Address;
+    const FAST = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0003" as Address;
+    let releaseSlow!: (owners: Address[]) => void;
+    const svc = services({
+      readSafeOwners: async (_chainId: number, address: Address) => address === SLOW ? new Promise<Address[]>((resolve) => { releaseSlow = resolve; }) : [ME, CO],
+    }) as Services;
+    svc.safeService = () => ({ getSafesByOwner: async () => [SLOW, FAST] }) as never;
+    let resolveFast!: (address: Address) => void;
+    const fastObserved = new Promise<Address>((resolve) => { resolveFast = resolve; });
+    const work = findOwnedSafesOnChainWithStatus(svc, 8453, ME, {
+      ens: async () => new Map(),
+      onCandidate: (event) => { if (event.safe) resolveFast(event.address); },
+    });
+    await expect(fastObserved).resolves.toBe(FAST);
+    releaseSlow([ME, CO]);
+    await work;
+  });
   it("keeps verified neighbors and reports partial when one candidate ownership read fails", async () => {
     const NEIGHBOR = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0002" as Address;
     const svc = services({

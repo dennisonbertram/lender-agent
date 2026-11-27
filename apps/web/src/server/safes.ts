@@ -84,25 +84,36 @@ async function readValue(services: Services, chainId: ChainId, safe: Address) {
  * balance and owner names when readable. One independently completable unit of work — the progressive picker asks
  * for each network separately. On the fork only Base is searched (its Safe service throws for any other chain).
  */
-export async function findOwnedSafesOnChainWithStatus(services: Services, chainId: ChainId, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<{ safes: OwnedSafeSlice[]; partial: boolean }> {
+export type OwnedSafeCandidateEvent = { address: Address; safe?: OwnedSafeSlice; complete?: boolean; status?: "not-owned" | "indeterminate" };
+export type OwnedSafesOnChainOptions = {
+  ens?: EnsResolver;
+  onCandidate?: (event: OwnedSafeCandidateEvent) => void;
+};
+
+export async function findOwnedSafesOnChainWithStatus(services: Services, chainId: ChainId, wallet: Address, deps: OwnedSafesOnChainOptions = {}): Promise<{ safes: OwnedSafeSlice[]; partial: boolean; candidateAddresses: Address[]; notOwnedAddresses: Address[]; indeterminateAddresses: Address[] }> {
   const ens = deps.ens ?? resolveEnsNames;
-  if (services.fork && chainId !== 8453) return { safes: [], partial: false };
+  if (services.fork && chainId !== 8453) return { safes: [], partial: false, candidateAddresses: [], notOwnedAddresses: [], indeterminateAddresses: [] };
   const addrs = await services.safeService(chainId).getSafesByOwner(wallet);
+  const candidateAddresses = [...new Map(addrs.map((a) => [a.toLowerCase(), a])).values()];
   let partial = false;
-  const checked = await Promise.all([...new Set(addrs.map((a) => a.toLowerCase()))].map(async (lc) => {
-    const address = addrs.find((a) => a.toLowerCase() === lc)!;
+  const notOwnedAddresses: Address[] = [];
+  const indeterminateAddresses: Address[] = [];
+  const checked = await Promise.all(candidateAddresses.map(async (address) => {
     let r: Awaited<ReturnType<typeof readOwned>>;
     try { r = await readOwned(services, chainId, address, wallet); }
-    catch { partial = true; return null; }
-    if (!r) return null;
+    catch { partial = true; indeterminateAddresses.push(address); deps.onCandidate?.({ address, status: "indeterminate" }); return null; }
+    if (!r) { notOwnedAddresses.push(address); deps.onCandidate?.({ address, status: "not-owned" }); return null; }
+    deps.onCandidate?.({ address, safe: { address, chainId, threshold: r.threshold, ownerCount: r.owners.length, owners: r.owners.map((owner) => ({ address: owner })) }, complete: false });
     const [value, names] = await Promise.all([
       readValue(services, chainId, address),
       ens(r.owners).catch(() => new Map<string, string>()),
     ]);
     const owners = r.owners.map((o) => ({ address: o, ...(names.get(o.toLowerCase()) ? { ens: names.get(o.toLowerCase())! } : {}) }));
-    return { address, chainId, threshold: r.threshold, ownerCount: r.owners.length, owners, ...(value ?? {}) };
+    const safe = { address, chainId, threshold: r.threshold, ownerCount: r.owners.length, owners, ...(value ?? {}) };
+    deps.onCandidate?.({ address, safe, complete: true });
+    return safe;
   }));
-  return { safes: checked.filter((c): c is OwnedSafeSlice => c !== null), partial };
+  return { safes: checked.filter((c): c is OwnedSafeSlice => c !== null), partial, candidateAddresses, notOwnedAddresses, indeterminateAddresses };
 }
 
 /** Compatibility wrapper for callers that need only the verified rows. */

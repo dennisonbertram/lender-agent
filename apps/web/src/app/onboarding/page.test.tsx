@@ -23,15 +23,18 @@ vi.mock("@/client/auth/useSession", () => ({
 
 let ownedData: object[] = [];
 let ownedFetching = false;
+let ownedStaleAddresses: string[] = [];
+let ownedPendingAddresses: string[] = [];
 let mineData: object[] | undefined = [];
 let mineLoading = false;
+let mineFetching = false;
 let mineError: Error | null = null;
 const refetch = vi.fn();
 const ownedWalletArgs: (string | undefined)[] = [];
 const mineWalletArgs: (string | undefined)[] = [];
 vi.mock("@/client/safes", () => ({
-  useOwnedSafes: (w?: string) => { ownedWalletArgs.push(w); return { data: ownedData, isLoading: false, isFetching: ownedFetching, pending: false, freshnessByChainId: {}, error: null, refetch }; },
-  useSafes: (w?: string) => { mineWalletArgs.push(w); return { data: mineData, isLoading: mineLoading, isFetching: mineLoading, isPending: mineData === undefined, error: mineError, refetch }; },
+  useOwnedSafes: (w?: string) => { ownedWalletArgs.push(w); return { data: ownedData, isLoading: false, isFetching: ownedFetching, pending: false, pendingAddresses: ownedPendingAddresses, staleAddresses: ownedStaleAddresses, freshnessByChainId: {}, error: null, refetch }; },
+  useSafes: (w?: string) => { mineWalletArgs.push(w); return { data: mineData, isLoading: mineLoading, isFetching: mineLoading || mineFetching, isPending: mineData === undefined, error: mineError, refetch }; },
   useAddSafe: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 
@@ -52,7 +55,7 @@ const pendingSafe: ListedSafe = {
   pendingSetup: true, createdChainIds: [8453, 100], recordedChainIds: [8453, 100, 42161], deployedChainIds: [8453],
 };
 
-beforeEach(() => { localStorage.clear(); wallet = W1; sessionLoading = false; mineLoading = false; mineError = null; ownedFetching = false; ownedWalletArgs.length = 0; mineWalletArgs.length = 0; });
+beforeEach(() => { localStorage.clear(); wallet = W1; sessionLoading = false; mineLoading = false; mineFetching = false; mineError = null; ownedFetching = false; ownedStaleAddresses = []; ownedPendingAddresses = []; ownedWalletArgs.length = 0; mineWalletArgs.length = 0; });
 afterEach(() => {
   cleanup();
   ownedData = [];
@@ -212,6 +215,66 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it("keeps live-only rows hidden through a first saved-list failure and retry until a snapshot arrives", () => {
+    mineData = undefined;
+    mineError = new Error("saved list unavailable");
+    ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
+    const { rerender } = render(<OnboardingPage />);
+    expect(screen.getByText(/We could not load your saved Safes/)).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Your Safes" })?.querySelector("li")).toBeUndefined();
+    expect(screen.getByRole("button", { name: "Add by address" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    mineError = null;
+    mineFetching = true;
+    rerender(<OnboardingPage />);
+    expect(screen.queryByRole("list", { name: "Your Safes" })?.querySelector("li")).toBeUndefined();
+    expect(screen.getByText(/Checking your saved Safes/)).toBeTruthy();
+
+    mineFetching = false;
+    mineData = [];
+    rerender(<OnboardingPage />);
+    expect(within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem")).toBeTruthy();
+  });
+
+  it("preserves a live tile disclosure and focus during a saved-list refetch after classification", () => {
+    ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
+    mineData = [];
+    const { rerender } = render(<OnboardingPage />);
+    const list = screen.getByRole("list", { name: "Your Safes" });
+    const tile = within(list).getByRole("listitem");
+    const details = within(tile).getByRole("button", { name: "Address and approvals" });
+    fireEvent.click(details);
+    details.focus();
+    mineFetching = true;
+    rerender(<OnboardingPage />);
+    expect(within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem")).toBe(tile);
+    expect(within(tile).getByRole("button", { name: "Address and approvals" })).toBe(details);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(details);
+  });
+
+  it("does not call cached saved-only network membership verified after a failed refresh", () => {
+    mineData = [{ ...pendingSafe, pendingSetup: false, createdChainIds: [], ownedChainIds: [8453], verifiedChainIds: [8453], networks: [8453] }];
+    mineError = new Error("saved list unavailable");
+    render(<OnboardingPage />);
+    const tile = within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem");
+    expect(within(tile).queryByText("Verified ownership on")).toBeNull();
+    expect(within(tile).getByText(/Saved ownership was last checked on Base/)).toBeTruthy();
+    expect(within(tile).getByText(/saved Safe list refresh failed/)).toBeTruthy();
+  });
+
+  it("shows an indeterminate live row as last known and keeps it in place", () => {
+    ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 2, ownerCount: 3, chainIds: [8453], balanceUsd: 0 }];
+    ownedStaleAddresses = [SAFE_A.toLowerCase()];
+    mineData = [];
+    render(<OnboardingPage />);
+    const tile = within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem");
+    expect(within(tile).getByText(/Last known ownership details/)).toBeTruthy();
+    expect(within(tile).queryByText("Verified ownership on")).toBeNull();
+    expect(within(tile).queryByText("No supported funds found.")).toBeNull();
   });
 
   it("scopes the wallet lookups to the signed-in wallet", () => {

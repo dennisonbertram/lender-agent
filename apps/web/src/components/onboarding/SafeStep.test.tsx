@@ -137,6 +137,31 @@ describe("SafeStep", () => {
     expect(screen.queryByText("2 of 2 owners must approve each transaction")).toBeNull();
     expect(screen.queryByText("0x0000…00b2")).toBeNull();
   });
+  it("keeps fresh discovery verified while marking saved-only network membership last known", () => {
+    render(<SafeStep savedFresh={false} found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453, 42161], discoveredChainIds: [8453],
+      networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [] }],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tile = screen.getByRole("listitem");
+    expect(within(tile).getByText("Verified ownership on").parentElement?.textContent).toContain("Base");
+    expect(within(tile).getByText("Verified ownership on").parentElement?.textContent).not.toContain("Arbitrum");
+    expect(within(tile).getByText(/Saved ownership was last checked on Arbitrum/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    fireEvent.click(screen.getByRole("button", { name: "Address" }));
+    expect(screen.getByText("Approval details unavailable on Arbitrum")).toBeTruthy();
+    expect(screen.queryByText("Only you approve transactions.")).toBeNull();
+  });
+  it("keeps a row visible while its ownership recheck is pending and labels its details as last known", () => {
+    render(<SafeStep pendingAddresses={[A]} found={[{
+      address: A, threshold: 2, ownerCount: 3, chainIds: [8453], balanceUsd: 0, balanceChainIds: [8453],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tile = screen.getByRole("listitem");
+    expect(within(tile).getByText(shortAddress(A))).toBeTruthy();
+    expect(within(tile).getByText(/Checking this Safe again/)).toBeTruthy();
+    expect(within(tile).getByText(/Last known supported balance/)).toBeTruthy();
+    expect(within(tile).queryByText("No supported funds found.")).toBeNull();
+    expect(within(tile).queryByText("Verified ownership on")).toBeNull();
+  });
   it("shows an Open Safe save error even when discovery also failed", () => {
     render(<SafeStep lookupFailed error="Could not save this Safe." found={[{
       address: A, threshold: 1, ownerCount: 1, chainIds: [8453],

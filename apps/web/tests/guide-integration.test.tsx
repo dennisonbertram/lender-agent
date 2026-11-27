@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   shell: {} as Record<string, unknown>,
   session: null as { address: string } | null,
   sessionLoading: false,
+  sessionFreshAfterMount: true,
   agentStatus: {} as Record<string, unknown>,
   thread: {} as Record<string, unknown>,
 }));
@@ -34,7 +35,7 @@ vi.mock("wagmi", () => ({
 }));
 
 vi.mock("@/client/auth/useSession", () => ({
-  useSession: () => ({ session: state.session, loading: state.sessionLoading, signIn: vi.fn(), signingIn: false, signInError: null }),
+  useSession: () => ({ session: state.session, loading: state.sessionLoading, hasFreshSession: state.sessionFreshAfterMount, signIn: vi.fn(), signingIn: false, signInError: null }),
   useSignOut: () => vi.fn(),
 }));
 
@@ -108,7 +109,8 @@ beforeEach(() => {
   state.shell = {};
   state.session = { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" };
   state.sessionLoading = false;
-  state.agentStatus = { data: { networks: [], eligibleChainIds: [], canChat: false, otherChainIds: [] }, isPending: false, error: null, isFetchedAfterMount: false };
+  state.sessionFreshAfterMount = true;
+  state.agentStatus = { data: { networks: [], eligibleChainIds: [], canChat: false, otherChainIds: [] }, isPending: false, isSuccess: true, isFetching: false, error: null, isFetchedAfterMount: true };
   state.thread = { isPending: false, isError: false, error: null, data: [], refetch: vi.fn() };
   window.matchMedia = ((q: string) => ({
     matches: state.mediaMatch(q), media: q, onchange: null,
@@ -235,9 +237,33 @@ describe("guide intro topics", () => {
     expect(signedIn.container.querySelector("[data-guide-button]")).toBeNull();
   });
 
+  it("defers home and returning-card guides while a cached signed-out session is being rechecked", () => {
+    state.session = null;
+    state.sessionLoading = false;
+    state.sessionFreshAfterMount = false;
+    const home = render(<BorrowerHome />);
+    expect(home.container.querySelector('[data-guide-intro="welcome"]')).toBeNull();
+    expect(home.container.querySelector("[data-guide-button]")).toBeNull();
+    home.unmount();
+    const returning = render(<SignInCard returning />);
+    expect(returning.container.querySelector('[data-guide-intro="welcome"]')).toBeNull();
+    expect(returning.container.querySelector("[data-guide-button]")).toBeNull();
+  });
+
   it("marks the agent step of onboarding", () => {
     const { container } = render(<AgentStepView safeAddress="0xabc" />);
     expect(container.querySelector('[data-guide-intro="agent"]')).toBeTruthy();
+  });
+
+  it.each([
+    ["active", { networks: [{ chainId: 8453, deployed: true, added: true }], eligibleChainIds: [8453], canChat: true, otherChainIds: [] }, "Open chat"],
+    ["inactive", { networks: [{ chainId: 8453, deployed: true, added: false }], eligibleChainIds: [8453], canChat: false, otherChainIds: [] }, "Add Lender agent"],
+  ] as const)("hides the guide for cached %s status while offline but keeps recovery available", (_label, data, recovery) => {
+    state.agentStatus = { isPending: false, isSuccess: true, isFetchedAfterMount: false, isFetching: false, fetchStatus: "paused", error: null, data };
+    const { container } = render(<AgentStepView safeAddress="0xabc" />);
+    expect(container.querySelector('[data-guide-intro="agent"]')).toBeNull();
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
+    expect(screen.getByRole("button", { name: recovery })).toBeTruthy();
   });
 
   it("suppresses the guide while the agent step loads", () => {

@@ -45,6 +45,7 @@ export function useSession() {
   return {
     session: session.data ?? null,
     loading: session.isLoading,
+    hasFreshSession: session.isSuccess && session.isFetchedAfterMount,
     signIn: useCallback(() => signInMutation.mutateAsync(), [signInMutation]),
     signingIn: signInMutation.isPending,
     signInError: signInMutation.error as Error | null,

@@ -68,9 +68,9 @@ describe("AgentStepView", () => {
     expect(screen.getByText("You are not an owner of this Safe")).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
   });
-  it("keeps cached chat recovery available when revalidation is paused offline", () => {
+  it("hides the guide but keeps cached navigation available when revalidation is paused offline", () => {
     status = { isPending: false, isFetching: false, isFetchedAfterMount: false, isSuccess: true, fetchStatus: "paused", data: on, error: null };
-    render(<AgentStepView safeAddress={A} />);
+    const { container } = render(<AgentStepView safeAddress={A} />);
     expect(replace).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Open chat" })).toBeTruthy();
   });

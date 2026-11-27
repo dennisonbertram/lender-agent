@@ -33,7 +33,7 @@ function walletChoices(connectors: readonly Connector[]) {
 export function SignInCard({ returning = false, presentation = "default", className, id }: { returning?: boolean; presentation?: "default" | "hero"; className?: string; id?: string } = {}) {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: connecting, error: connectError } = useConnect();
-  const { session, loading: sessionLoading, signIn, signingIn, signInError } = useSession();
+  const { session, loading: sessionLoading, hasFreshSession, signIn, signingIn, signInError } = useSession();
   const [choosing, setChoosing] = useState(false);
   const [signAfterConnect, setSignAfterConnect] = useState(false);
   const [walletCheckMessage, setWalletCheckMessage] = useState(false);
@@ -42,7 +42,7 @@ export function SignInCard({ returning = false, presentation = "default", classN
   const mock = process.env.NEXT_PUBLIC_MOCK_WALLET === "1";
   const localDemo = process.env.NEXT_PUBLIC_LOCAL_DEMO === "1";
   const authPending = sessionLoading || Boolean(session);
-  const guideAvailable = !returning || (!sessionLoading && !session);
+  const guideAvailable = !returning || (!sessionLoading && hasFreshSession && !session);
   const choices = walletReady ? walletChoices(connectors) : [];
   // What the borrower can actually use: `injected()` is always configured, so a connector count lies.
   const noWallet = walletReady && choices.length === 0 && !(mock && connectors.some((c) => c.id === "injected"));
