@@ -120,6 +120,22 @@ describe("ChatView", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
     expect(screen.queryByText(/Add the Lender agent to suggest plans/)).toBeNull();
     expect(screen.queryByRole("button", { name: /Add the agent/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Check access again" })).toBeTruthy();
+  });
+
+  it("keeps the ownership state after an initial 403 and transient access-check failure", async () => {
+    let denied = true;
+    vi.stubGlobal("fetch", vi.fn(async () => denied
+      ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })
+      : new Response(JSON.stringify({ error: "unavailable" }), { status: 500 })));
+    render(wrap(<ChatView address="0xabc" />, { agentOn: false }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
+    denied = false;
+    fireEvent.click(screen.getByRole("button", { name: "Check access again" }));
+    expect(await screen.findByText(/We could not confirm access/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/owner of this Safe on every network/);
+    expect(screen.queryByText(/Add the Lender agent to suggest plans/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add the agent/ })).toBeNull();
   });
 
   it("keeps a locked composer in place while loading and after a failed load", async () => {
@@ -178,18 +194,35 @@ describe("ChatView", () => {
     beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); setVisibility("visible"); });
     afterEach(() => { vi.useRealTimers(); setVisibility("visible"); });
 
-    it("hides the transcript and composer when polling reports revoked Safe ownership", async () => {
-      let denied = false;
-      vi.stubGlobal("fetch", vi.fn(async () => denied
-        ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })
-        : new Response(JSON.stringify({ messages: [m("a1", "private history text")] }), { status: 200 })));
+    it("hides old history after a polling 403 and requires a successful access check to restore chat", async () => {
+      let mode: "allowed" | "denied" | "transient" = "allowed";
+      let recovered = false;
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        if (mode === "denied") return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+        if (mode === "transient") return new Response(JSON.stringify({ error: "unavailable" }), { status: 500 });
+        const messages = recovered ? [m("a2", "fresh authorized history")] : [m("a1", "private history text")];
+        return new Response(JSON.stringify({ messages }), { status: 200 });
+      }));
       render(wrap(<ChatView address="0xabc" />));
       expect(await screen.findByText("private history text")).toBeTruthy();
-      denied = true;
+      mode = "denied";
       await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
       expect((await screen.findByRole("alert")).textContent).toMatch(/owner of this Safe on every network/);
       expect(screen.queryByText("private history text")).toBeNull();
       expect(screen.queryByPlaceholderText("Ask anything, or say how much you need")).toBeNull();
+      expect(screen.queryByRole("log")).toBeNull();
+
+      mode = "transient";
+      fireEvent.click(screen.getByRole("button", { name: "Check access again" }));
+      await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/owner of this Safe on every network/));
+      expect(screen.queryByText("private history text")).toBeNull();
+      expect(screen.getByRole("button", { name: "Check access again" })).toBeTruthy();
+
+      mode = "allowed";
+      recovered = true;
+      fireEvent.click(screen.getByRole("button", { name: "Check access again" }));
+      expect(await screen.findByText("fresh authorized history")).toBeTruthy();
+      expect(screen.queryByText("private history text")).toBeNull();
     });
 
     it("shows a server message appended while idle exactly once, and announces it", async () => {

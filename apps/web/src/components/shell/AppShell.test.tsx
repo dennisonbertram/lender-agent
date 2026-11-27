@@ -142,14 +142,14 @@ describe("AppShell", () => {
     expect(shellRoot.style.top).toBe("12px");
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
     const sheet = document.querySelector('[data-slot="sheet-content"]') as HTMLElement;
-    expect(sheet.style.height).toBe("357px");
+    expect(sheet.style.maxHeight).toBe("357px");
     expect(sheet.style.bottom).toBe(`${window.innerHeight - 432}px`);
 
     Object.assign(viewport, { height: 800, offsetTop: 0, scale: 1.5 });
     await act(async () => { viewport.dispatchEvent(new Event("resize")); });
     expect(shellRoot.style.height).toBe("");
     expect(shellRoot.style.top).toBe("");
-    expect(sheet.style.height).toBe("");
+    expect(sheet.style.maxHeight).toBe("");
     expect(sheet.style.bottom).toBe("");
   });
   it("shows a persistent test-network strip on Base Sepolia, none on Base", () => {

@@ -16,6 +16,7 @@ import { GuideButton } from "@/components/guide/Guide";
 import { primaryChain, useShell } from "./ShellContext";
 import { CHAIN_IDS, CHAIN_NAME, isChainId } from "@/shared/types";
 import { NetworkMark } from "@/components/ui/network-mark";
+import { keyboardViewport } from "@/components/ui/keyboard-viewport";
 
 /** Tracks a media query. False on the server and until mounted. */
 export function useMedia(query: string): boolean {
@@ -55,7 +56,6 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
   const [chatDocked, setChatDocked] = useState(true);
   const [chatSheet, setChatSheet] = useState(false);
   const [navSheet, setNavSheet] = useState(false);
-  const [visibleViewport, setVisibleViewport] = useState<{ height: number; bottom: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const showSidebar = useMedia("(min-width: 768px)");
@@ -77,23 +77,14 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
     const shell = shellRef.current;
     if (!viewport || !shell) return;
     const syncVisibleViewport = () => {
-      const active = document.activeElement;
-      const isTextEntry = active instanceof HTMLElement && (
-        active.isContentEditable || active.matches("input, textarea, [contenteditable='true']")
-      );
-      const keyboardSized = isTextEntry && window.innerHeight - viewport.height > 80;
-      if (Math.abs(viewport.scale - 1) > 0.01 || !keyboardSized) {
+      const visible = keyboardViewport();
+      if (!visible) {
         shell.style.height = "";
         shell.style.top = "";
-        setVisibleViewport(null);
         return;
       }
-      shell.style.height = `${viewport.height}px`;
+      shell.style.height = `${visible.height}px`;
       shell.style.top = `${viewport.offsetTop}px`;
-      const bottom = Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height);
-      setVisibleViewport((previous) => previous?.height === viewport.height && previous.bottom === bottom
-        ? previous
-        : { height: viewport.height, bottom });
     };
     syncVisibleViewport();
     viewport.addEventListener("resize", syncVisibleViewport);
@@ -152,7 +143,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
       {!showSidebar && (
         <Sheet open={navSheet} onOpenChange={setNavSheet}>
-          <SheetContent className="h-[85dvh] p-0" style={visibleViewport ? { height: `${Math.min(window.innerHeight * 0.85, visibleViewport.height * 0.85)}px`, bottom: `${visibleViewport.bottom}px` } : undefined}>
+          <SheetContent className="h-[85dvh] p-0">
             <div className="flex items-center justify-between px-3 pt-3">
               <SheetTitle>Menu</SheetTitle>
               <SheetClose render={<Button variant="ghost" size="icon" className="size-11" aria-label="Close menu" />}><X /></SheetClose>
@@ -163,7 +154,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
       )}
       {hasChat && !showChat && (
         <Sheet open={chatSheet && !onChat} onOpenChange={setChatSheet}>
-          <SheetContent className="h-[90dvh] overflow-hidden p-0" style={visibleViewport ? { height: `${Math.min(window.innerHeight * 0.85, visibleViewport.height * 0.9)}px`, bottom: `${visibleViewport.bottom}px` } : undefined}>
+          <SheetContent className="h-[90dvh] overflow-hidden p-0">
             <SheetTitle className="sr-only">Lender agent</SheetTitle>
             {renderChat(() => setChatSheet(false))}
           </SheetContent>

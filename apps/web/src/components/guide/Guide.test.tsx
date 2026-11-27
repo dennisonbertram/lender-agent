@@ -220,6 +220,24 @@ describe("Guide", () => {
     expect(screen.getByText("Step 1 of 1")).toBeTruthy();
   });
 
+  it("keeps the phone guide search sheet inside the keyboard viewport", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width: 479px"), addEventListener() {}, removeEventListener() {} }));
+    const viewport = new EventTarget() as EventTarget & { height: number; offsetTop: number; scale: number };
+    Object.assign(viewport, { height: 800, offsetTop: 0, scale: 1 });
+    vi.stubGlobal("visualViewport", viewport);
+    render(page(<GuideButton />));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    await waitFor(() => expect(document.querySelector('[data-slot="sheet-content"]')).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "All topics" }));
+    const searchBox = screen.getByRole("searchbox", { name: "Search guides" });
+    searchBox.focus();
+    Object.assign(viewport, { height: 420, offsetTop: 12 });
+    await act(async () => { viewport.dispatchEvent(new Event("resize")); });
+    const sheet = document.querySelector('[data-slot="sheet-content"]') as HTMLElement;
+    expect(sheet.style.maxHeight).toBe("357px");
+    expect(sheet.style.bottom).toBe(`${window.innerHeight - 432}px`);
+  });
+
   it("opens the index directly on a route with no feature topic", () => {
     pathname = "/somewhere/unmapped";
     render(page(<GuideButton />));

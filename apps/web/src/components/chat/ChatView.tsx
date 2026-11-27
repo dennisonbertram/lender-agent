@@ -131,15 +131,39 @@ export function ChatBody({ address, placeholder, placement, contextualHelpOnly }
   const { agentOn } = useShell();
   const queryClient = useQueryClient();
   const [deniedAddress, setDeniedAddress] = useState<string | null>(null);
+  const [checkingAddress, setCheckingAddress] = useState<string | null>(null);
+  const [checkFailedAddress, setCheckFailedAddress] = useState<string | null>(null);
+  const activeAddressRef = useRef(address);
+  activeAddressRef.current = address;
   const queryKey = ["chat", address.toLowerCase()];
   const onForbidden = useCallback(() => {
     setDeniedAddress(address);
     queryClient.removeQueries({ queryKey: ["chat", address.toLowerCase()], exact: true });
   }, [address, queryClient]);
+  const checkAccess = useCallback(async () => {
+    setDeniedAddress(address);
+    setCheckingAddress(address);
+    setCheckFailedAddress(null);
+    try {
+      await queryClient.fetchQuery({ queryKey: ["chat", address.toLowerCase()], queryFn: () => fetchThread(address), staleTime: 0 });
+      if (activeAddressRef.current === address) {
+        setDeniedAddress((current) => current === address ? null : current);
+        setCheckFailedAddress((current) => current === address ? null : current);
+      }
+    } catch {
+      if (activeAddressRef.current === address) setCheckFailedAddress(address);
+    } finally {
+      setCheckingAddress((current) => current === address ? null : current);
+    }
+  }, [address, queryClient]);
   const thread = useQuery({ queryKey, queryFn: () => fetchThread(address), staleTime: Infinity, gcTime: 0, retry: false });
   const initialForbidden = thread.isError && thread.error instanceof ApiError && thread.error.status === 403;
   if (deniedAddress === address || initialForbidden) return (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-3"><p role="alert" className="text-center text-sm text-muted-foreground">You need to be an owner of this Safe on every network to chat.</p></div>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-3 text-center">
+      <p role="alert" className="text-sm text-muted-foreground">You need to be an owner of this Safe on every network to chat.</p>
+      {checkFailedAddress === address && <p role="status" className="text-xs text-muted-foreground">We could not confirm access. Chat stays hidden until an authorized check succeeds.</p>}
+      <Button size="sm" variant="outline" disabled={checkingAddress === address} onClick={() => void checkAccess()}>{checkingAddress === address ? "Checking access…" : "Check access again"}</Button>
+    </div>
   );
   if (thread.isPending) {
     return (
