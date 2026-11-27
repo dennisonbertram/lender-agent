@@ -204,11 +204,15 @@ describe("guide intro topics", () => {
 });
 
 describe("guide step targets stay on the real controls", () => {
-  it("choose-safe marks the Safe list; the picker's create launchers stay unmarked", () => {
+  it("choose-safe marks a real Open Safe action; the picker's create launchers stay unmarked", () => {
     const found = render(
       <SafeStep found={[foundSafe]} busy={false} onPick={() => {}} onAdd={() => {}} onCreate={() => {}} existing={[]} />,
     );
-    expect(found.container.querySelector('[data-guide-target="choose-safe"]')).toBeTruthy();
+    // The marker sits on an actual open action, not the list — "Show on page" always
+    // points at a control that can open a Safe.
+    const marked = found.container.querySelectorAll('[data-guide-target="choose-safe"]');
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toBe(found.getByRole("button", { name: /^Open Safe/ }));
     // "Create a new Safe" only starts the flow — the review step's own marker must not sit
     // on the launcher, or "Show on page" would highlight a button with no review behind it.
     const launcher = [...found.container.querySelectorAll("button")].find((b) => b.textContent === "Create a new Safe");

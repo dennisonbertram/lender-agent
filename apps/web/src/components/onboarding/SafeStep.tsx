@@ -30,6 +30,11 @@ const amountText = (n: number) => new Intl.NumberFormat("en-US", { maximumFracti
 /** The tile's title: its name, or the short address so identical unnamed Safes stay distinct. */
 const safeTitle = (s: { name?: string; address: string }) => s.name || shortAddress(s.address);
 
+/** Every "Open Safe" button names its Safe for assistive tech: the title plus the short
+    address — skipped when the title already is that address, so unnamed Safes are not repeated. */
+const openSafeLabel = (s: { name?: string; address: string }) =>
+  s.name ? `Open Safe ${s.name} ${shortAddress(s.address)}` : `Open Safe ${shortAddress(s.address)}`;
+
 /** The Safe's signers: ENS name or short address, "You" for the signed-in wallet, the rest behind "and N more". Expanded, each is an address with copy and explorer link. */
 function Signers({ owners, wallet, chainId }: { owners: { address: string; ens?: string }[]; wallet?: string; chainId?: number }) {
   const [open, setOpen] = useState(false);
@@ -41,7 +46,7 @@ function Signers({ owners, wallet, chainId }: { owners: { address: string; ens?:
       <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <span>Signers:</span>
         {!open && shown.map((o) => (
-          <span key={o.address} className={you(o.address) ? "font-medium text-foreground" : undefined}>
+          <span key={o.address} className={cn("min-w-0 [overflow-wrap:anywhere]", you(o.address) && "font-medium text-foreground")}>
             {you(o.address) ? "You" : o.ens || formatAddress(o.address)}
           </span>
         ))}
@@ -53,7 +58,7 @@ function Signers({ owners, wallet, chainId }: { owners: { address: string; ens?:
         <ul className="flex flex-col gap-0.5">
           {shown.map((o) => (
             <li key={o.address} className="flex flex-wrap items-center gap-x-1.5">
-              {(you(o.address) || o.ens) && <span className={you(o.address) ? "font-medium text-foreground" : undefined}>{you(o.address) ? "You" : o.ens}</span>}
+              {(you(o.address) || o.ens) && <span className={cn("min-w-0 [overflow-wrap:anywhere]", you(o.address) && "font-medium text-foreground")}>{you(o.address) ? "You" : o.ens}</span>}
               <AddressText address={o.address} chainId={chainId} />
             </li>
           ))}
@@ -98,24 +103,31 @@ function resolveDetails(safe: FoundSafeCard | undefined, verifiedChainIds: numbe
   return { detailChainId, owners: snapshot?.owners ?? legacyFirst?.owners };
 }
 
+/** What a disclosure truthfully contains beyond the address: signer names, an approval
+    policy, or neither — the toggle label must never promise content that is absent. */
+type DetailContent = "signers" | "approvals" | "address";
+
 /** The disclosure toggle's label: qualified with the network whenever the details could describe another one. */
-function detailsToggleLabel(owners: { address: string; ens?: string }[] | undefined, name: string | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
+function detailsToggleLabel(content: DetailContent, name: string | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
   const oneNetwork = verifiedChainIds.length <= 1;
   const filterDoesNotMatch = selectedChainId !== null && selectedChainId !== undefined && !verifiedChainIds.includes(selectedChainId);
-  return !name ? "Address" : !oneNetwork || filterDoesNotMatch
-    ? owners ? `Address and signers on ${name}` : `Address on ${name}`
-    : "Address and signers";
+  const base = content === "signers" ? "Address and signers" : content === "approvals" ? "Address and approvals" : "Address";
+  return !name ? "Address" : !oneNetwork || filterDoesNotMatch ? `${base} on ${name}` : base;
 }
 
-function approvalLabel(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
+/** The approval snapshot a disclosure can claim: the resolved per-network detail, or the
+    legacy single-network fields only when they describe that same first chain — so no
+    verified chain never borrows the top-level fields to invent a policy. */
+function resolveApprovalSnapshot(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
   const networkDetails = safe?.networkDetails;
   const chainId = resolveDetailsChainId(safe, verifiedChainIds, selectedChainId);
   const snapshot = chainId === undefined ? undefined : networkDetails?.find((network) => network.chainId === chainId);
-  // Same single-network fallback as resolveDetails: with no verified chain `undefined === undefined`
-  // must not borrow the top-level fields and invent an approval policy.
   const legacyFirst = safe && (!networkDetails || networkDetails.length === 0) && chainId !== undefined && chainId === safe.chainIds[0] ? safe : undefined;
-  const threshold = snapshot?.threshold ?? legacyFirst?.threshold;
-  const ownerCount = snapshot?.ownerCount ?? legacyFirst?.ownerCount;
+  return { chainId, threshold: snapshot?.threshold ?? legacyFirst?.threshold, ownerCount: snapshot?.ownerCount ?? legacyFirst?.ownerCount };
+}
+
+function approvalLabel(safe: FoundSafeCard | undefined, verifiedChainIds: number[], selectedChainId?: number | null) {
+  const { chainId, threshold, ownerCount } = resolveApprovalSnapshot(safe, verifiedChainIds, selectedChainId);
   const name = chainId === undefined ? undefined : chainChipId(chainId);
   if (threshold === undefined || ownerCount === undefined) return `Approval details unavailable${name ? ` on ${name}` : " until a network is verified"}.`;
   const summary = ownerCount === 1 ? approvalsSummary(1, 1) : `${threshold} of ${ownerCount} owners must approve each transaction`;
@@ -156,10 +168,12 @@ function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wal
   showVerified?: boolean;
 }) {
   const { detailChainId, owners } = resolveDetails(safe, verifiedChainIds, selectedChainId);
+  const { threshold, ownerCount } = resolveApprovalSnapshot(safe, verifiedChainIds, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   const balanceChainIds = safe ? safe.balanceChainIds ?? safe.chainIds : [];
   const hasDistinctBalanceCoverage = safe && verifiedChainIds.length > 1;
-  const detailsLabel = detailsToggleLabel(owners, name, verifiedChainIds, selectedChainId);
+  const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
+  const detailsLabel = detailsToggleLabel(content, name, verifiedChainIds, selectedChainId);
   return (
     <div className="flex flex-col gap-1.5">
       {showVerified && <VerifiedNetworks ids={verifiedChainIds} />}
@@ -201,6 +215,17 @@ function TileActions({ action, label, children }: { action: ReactNode; label: st
 const tileClass = "flex min-w-0 flex-col rounded-xl bg-card ring-1 ring-foreground/10 transition-colors hover:bg-muted/50";
 const tileTitleClass = "min-w-0 text-sm font-medium leading-5 [overflow-wrap:anywhere]";
 
+/** A tile's identity: the title with the short address beside it whenever the title is a
+    name — same-named Safes stay distinguishable; unnamed ones need no second copy. */
+function TileTitle({ safe }: { safe: { name?: string; address: string } }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <span className={tileTitleClass}>{safeTitle(safe)}</span>
+      {safe.name && <span className="min-w-0 text-xs font-normal tabular-nums text-muted-foreground">{shortAddress(safe.address)}</span>}
+    </span>
+  );
+}
+
 /** A compact found-Safe tile: identity, balance and verified networks up front; approval
     policy, balance coverage, assets, address and signers behind the details disclosure. */
 function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
@@ -211,12 +236,14 @@ function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
   onPick: (address: string) => void;
 }) {
   const { detailChainId, owners } = resolveDetails(s, s.chainIds, selectedChainId);
+  const { threshold, ownerCount } = resolveApprovalSnapshot(s, s.chainIds, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   const balanceChainIds = s.balanceChainIds ?? s.chainIds;
+  const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   return (
     <li className={tileClass}>
       <div className="flex flex-1 flex-col gap-1.5 p-3">
-        <span className={tileTitleClass}>{safeTitle(s)}</span>
+        <TileTitle safe={s} />
         {s.balanceUsd === undefined ? (
           <span className="text-xs text-muted-foreground">Balance unavailable</span>
         ) : !hasCompleteBalanceCoverage(s) ? (
@@ -235,11 +262,13 @@ function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
         <VerifiedNetworks ids={s.chainIds} />
       </div>
       <TileActions
-        action={<Button size="sm" disabled={busy} onClick={() => onPick(s.address)}>Open Safe</Button>}
-        label={detailsToggleLabel(owners, name, s.chainIds, selectedChainId)}
+        action={<Button size="sm" aria-label={openSafeLabel(s)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(s.address)}>Open Safe</Button>}
+        label={detailsToggleLabel(content, name, s.chainIds, selectedChainId)}
       >
         <span>{approvalLabel(s, s.chainIds, selectedChainId)}</span>
-        {s.assets && s.assets.length > 0 && <span>{s.assets.map((a) => `${amountText(a.amount)} ${a.symbol}`).join(" · ")}</span>}
+        {s.assets && s.assets.length > 0 && <span>{balanceChainIds.length > 0
+          ? `Tokens ${balanceChainIds.length === 1 ? "on" : "across"} ${balanceChainIds.map(chainChipId).join(" and ")}`
+          : "Tokens (source networks unreported)"}: {s.assets.map((a) => `${amountText(a.amount)} ${a.symbol}`).join(" · ")}</span>}
         <AddressText address={s.address} chainId={detailChainId} />
         {owners && owners.length > 0 && <Signers owners={owners} wallet={wallet} chainId={detailChainId} />}
       </TileActions>
@@ -257,18 +286,18 @@ function SavedTile({ safe: k, wallet, selectedChainId, busy, onPick }: {
   onPick: (address: string) => void;
 }) {
   const verified = k.availableChainIds ?? k.chainIds ?? [];
-  const { detailChainId, owners } = resolveDetails(undefined, verified, selectedChainId);
+  const { detailChainId } = resolveDetails(undefined, verified, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   return (
     <li className={tileClass}>
       <div className="flex flex-1 flex-col gap-1.5 p-3">
-        <span className={tileTitleClass}>{safeTitle(k)}</span>
+        <TileTitle safe={k} />
         <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
         <VerifiedNetworks ids={verified} />
       </div>
       <TileActions
-        action={<Button size="sm" disabled={busy} onClick={() => onPick(k.address)}>Open Safe</Button>}
-        label={detailsToggleLabel(owners, name, verified, selectedChainId)}
+        action={<Button size="sm" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>Open Safe</Button>}
+        label={detailsToggleLabel("address", name, verified, selectedChainId)}
       >
         <span>{approvalLabel(undefined, verified, selectedChainId)}</span>
         <AddressText address={k.address} chainId={detailChainId} />
@@ -366,7 +395,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
           ? <>No Safes with reported network information found on {chainChipId(networkFilter)}. Choose All networks to review Safes whose network is unavailable.</>
           : <>No Safes found on {chainChipId(networkFilter)}.</>}</p>}
         {pendingKnown.length > 0 && (
-        <ul aria-label="Finish setting up" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-guide-target="choose-safe">
+        <ul aria-label="Finish setting up" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {pendingKnown.map((k) => (
             <li key={k.address} className={tileClass}>
               {(() => {
@@ -374,7 +403,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                 const done = (k.chainIds ?? []).filter((c) => !pending.includes(c));
                 return (
                 <div className="flex flex-col gap-1.5 p-3">
-                  <span className={tileTitleClass}>{safeTitle(k)}</span>
+                  <TileTitle safe={k} />
                   {networkFilter !== null && !k.availableChainIds?.includes(networkFilter) && <span className="text-xs text-muted-foreground">Setup recovery is shown even though this Safe does not match the selected network.</span>}
                   <span className="text-xs text-muted-foreground">
                     {pending.length > 0
@@ -383,7 +412,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
                   </span>
                   <Button size="lg" disabled={busy} onClick={() => onResume?.(k.address)}>Finish setting up</Button>
                   <SafeNetworkInfo address={k.address} safe={k.discovery} verifiedChainIds={k.availableChainIds ?? []} selectedChainId={networkFilter} wallet={wallet} showBalanceAmount />
-                  {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" disabled={busy} onClick={() => onPick(k.address)}>
+                  {k.openSafeChainIds && k.openSafeChainIds.length > 0 && <Button size="lg" variant="outline" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>
                     Open Safe
                   </Button>}
                 </div>
@@ -393,15 +422,11 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
           ))}
         </ul>
         )}
-        {visibleFound.length > 0 && (
-        <ul aria-label="Your Safes" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-guide-target="choose-safe">
+        {(visibleFound.length > 0 || savedKnown.length > 0) && (
+        <ul aria-label="Your Safes" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {visibleFound.map((s) => (
             <FoundTile key={s.address} safe={s} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
           ))}
-        </ul>
-        )}
-        {savedKnown.length > 0 && (
-        <ul aria-label="Saved Safes" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-guide-target="choose-safe">
           {savedKnown.map((k) => (
             <SavedTile key={k.address} safe={k} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
           ))}

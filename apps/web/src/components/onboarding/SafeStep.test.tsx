@@ -12,11 +12,11 @@ describe("SafeStep", () => {
     const onPick = vi.fn();
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [8453] }]} existing={[]} onPick={onPick} onAdd={() => {}} />);
     const tile = screen.getByRole("listitem");
-    fireEvent.click(within(tile).getByRole("button", { name: "Address and signers" }));
+    fireEvent.click(within(tile).getByRole("button", { name: "Address and approvals" }));
     expect(within(tile).getByText("2 of 3 owners must approve each transaction")).toBeTruthy();
     // The same short address also titles an unnamed Safe — the disclosed row carries the full address as its title.
     expect(within(tile).getByText(/^0x5a.{2}…0001$/i, { selector: "[title]" })).toBeTruthy();
-    fireEvent.click(within(tile).getByRole("button", { name: "Open Safe" }));
+    fireEvent.click(within(tile).getByRole("button", { name: `Open Safe ${shortAddress(A)}` }));
     expect(onPick).toHaveBeenCalledWith(A);
   });
   it("filters discovered Safes by network, defaults to all, and keeps pending recovery visible", () => {
@@ -112,7 +112,7 @@ describe("SafeStep", () => {
       { address: A.toLowerCase(), name: "Holiday saved", chainIds: [8453, 42161] },
       { address: A.toLowerCase(), name: "Holiday setup", pendingSetup: true, chainIds: [8453], pendingChainIds: [42161] },
     ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
-    expect(screen.queryByRole("button", { name: /Holiday$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open Safe/ })).toBeNull();
     expect(screen.queryByText("Holiday saved")).toBeNull();
     expect(screen.getByText("Holiday setup")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
@@ -150,7 +150,7 @@ describe("SafeStep", () => {
     expect(screen.getByText(shortAddress(A))).toBeTruthy();
     expect(screen.getByText("Empty. Add funds before borrowing.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy address" })).toBeNull();
-    fireEvent.click(screen.getByText("Address and signers"));
+    fireEvent.click(screen.getByText("Address and approvals"));
     expect(screen.getByRole("button", { name: "Copy address" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View on Basescan" })).toBeTruthy();
   });
@@ -173,8 +173,8 @@ describe("SafeStep", () => {
     // independent controls in one bottom row, never nested in each other.
     expect(within(tile).getByText("Base Safe")).toBeTruthy();
     expect(tile.textContent).toContain("$7,500");
-    const open = within(tile).getByRole("button", { name: "Open Safe" });
-    const details = within(tile).getByRole("button", { name: "Address and signers" });
+    const open = within(tile).getByRole("button", { name: `Open Safe Base Safe ${shortAddress(A)}` });
+    const details = within(tile).getByRole("button", { name: "Address and approvals" });
     expect(open.contains(details)).toBe(false);
     expect(details.contains(open)).toBe(false);
     expect(details.getAttribute("aria-expanded")).toBe("false");
@@ -188,7 +188,7 @@ describe("SafeStep", () => {
     render(<SafeStep found={[]} lookupFailed known={[{ address: A, name: "Holiday", chainIds: [8453] }]} existing={[A]} onPick={pick} onAdd={() => {}} onRetry={retry} />);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalled();
-    fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Open Safe" }));
+    fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: `Open Safe Holiday ${shortAddress(A)}` }));
     expect(pick).toHaveBeenCalledWith(A);
   });
   it("a saved Safe whose setup never finished offers Finish setting up instead of a plain pick", () => {
@@ -213,7 +213,7 @@ describe("SafeStep", () => {
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     fireEvent.click(screen.getByText("Other options"));
     fireEvent.click(screen.getByRole("button", { name: "Add by address" }));
-    expect(screen.queryByRole("button", { name: "Open Safe" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open Safe/ })).toBeNull();
   });
   it("marks a testnet Safe", () => {
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [84532] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
@@ -227,7 +227,7 @@ describe("SafeStep", () => {
   });
   it("a one-owner Safe reads Only you approve", () => {
     render(<SafeStep found={[{ address: A, threshold: 1, ownerCount: 1, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Address and signers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Address and approvals" }));
     expect(screen.getByText("Only you approve transactions.")).toBeTruthy();
   });
   it("never claims an approval policy when no network is verified", () => {
@@ -244,9 +244,9 @@ describe("SafeStep", () => {
       { address: B, name: "Second Safe", threshold: 1, ownerCount: 1, chainIds: [8453] },
     ]} existing={[]} onPick={onPick} onAdd={() => {}} />);
     const tiles = screen.getAllByRole("listitem");
-    fireEvent.click(within(tiles[1]).getByRole("button", { name: "Address and signers" }));
+    fireEvent.click(within(tiles[1]).getByRole("button", { name: "Address and approvals" }));
     expect(onPick).not.toHaveBeenCalled();
-    fireEvent.click(within(tiles[1]).getByRole("button", { name: "Open Safe" }));
+    fireEvent.click(within(tiles[1]).getByRole("button", { name: `Open Safe Second Safe ${shortAddress(B)}` }));
     expect(onPick).toHaveBeenCalledWith(B);
     expect(onPick).toHaveBeenCalledTimes(1);
   });
@@ -256,6 +256,68 @@ describe("SafeStep", () => {
     const title = screen.getByText(name);
     expect(title.className).toMatch(/overflow-wrap|break/);
     expect(title.closest("li")?.className).toMatch(/min-w-0/);
+  });
+  it("puts found and saved Safes into one Your Safes list, each Open Safe named for its own tile", () => {
+    const saved = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002";
+    render(<SafeStep found={[{ address: A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }]}
+      known={[{ address: saved, name: "Beach", chainIds: [8453] }]}
+      existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const grid = screen.getByRole("list", { name: "Your Safes" });
+    expect(within(grid).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(grid).getByRole("button", { name: `Open Safe Holiday ${shortAddress(A)}` })).toBeTruthy();
+    expect(within(grid).getByRole("button", { name: `Open Safe Beach ${shortAddress(saved)}` })).toBeTruthy();
+    expect(within(grid).getByText(/Saved — your wallet is checked again/)).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Saved Safes" })).toBeNull();
+  });
+  it("marks only real Open Safe buttons for the guide — a recovery open counts, Finish setting up never does", () => {
+    const openable = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002";
+    const stuck = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0003";
+    const first = render(<SafeStep found={[]} known={[
+      { address: openable, name: "Partly open", pendingSetup: true, chainIds: [8453, 42161], openSafeChainIds: [8453] },
+      { address: stuck, name: "Stuck", pendingSetup: true, chainIds: [8453] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const marked = [...first.container.querySelectorAll('[data-guide-target="choose-safe"]')];
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toBe(screen.getByRole("button", { name: `Open Safe Partly open ${shortAddress(openable)}` }));
+    expect(screen.getAllByRole("button", { name: "Finish setting up" })).toHaveLength(2);
+    first.unmount();
+    // A pending-only picker with no openable network marks nothing — no impossible guide action.
+    const none = render(<SafeStep found={[]} known={[
+      { address: stuck, name: "Stuck", pendingSetup: true, chainIds: [8453] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(none.container.querySelectorAll('[data-guide-target="choose-safe"]')).toHaveLength(0);
+  });
+  it("labels disclosed token amounts with the networks their balances were read from, never the filter", () => {
+    render(<SafeStep found={[{
+      address: A, name: "Mixed", threshold: 1, ownerCount: 1, chainIds: [8453, 42161],
+      balanceUsd: 4500, balanceChainIds: [8453], assets: [{ symbol: "ETH", amount: 2.1 }],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    fireEvent.click(screen.getByRole("button", { name: "Address on Arbitrum" }));
+    expect(screen.getByText("Tokens on Base: 2.1 ETH")).toBeTruthy();
+  });
+  it("qualifies disclosed token amounts with an unknown source when no balance network is reported", () => {
+    render(<SafeStep found={[{ address: A, name: "Unknown", threshold: 1, ownerCount: 1, chainIds: [], assets: [{ symbol: "ETH", amount: 1 }] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Address" }));
+    expect(screen.getByText("Tokens (source networks unreported): 1 ETH")).toBeTruthy();
+  });
+  it("shows the short address beside a named Safe so same-named accounts stay distinct", () => {
+    const B = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002";
+    render(<SafeStep found={[
+      { address: A, name: "My Safe", threshold: 1, ownerCount: 1, chainIds: [8453] },
+      { address: B, threshold: 1, ownerCount: 1, chainIds: [8453] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tiles = screen.getAllByRole("listitem");
+    expect(within(tiles[0]).getByText("My Safe")).toBeTruthy();
+    expect(within(tiles[0]).getByText(shortAddress(A))).toBeTruthy();
+    // The unnamed Safe's title already is its short address — no second copy is rendered.
+    expect(within(tiles[1]).getAllByText(shortAddress(B))).toHaveLength(1);
+  });
+  it("labels the disclosure Address and approvals when a found Safe has a policy but no signer list", () => {
+    render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.queryByRole("button", { name: /signers/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Address and approvals" }));
+    expect(screen.getByText("2 of 3 owners must approve each transaction")).toBeTruthy();
   });
   it("Cancel leaves Add by address", () => {
     render(<SafeStep found={[]} existing={[]} onPick={() => {}} onAdd={() => {}} onCreate={() => {}} />);
@@ -286,9 +348,9 @@ describe("SafeStep", () => {
       show({ name: "Holiday", balanceUsd: 12340.4, assets: [{ symbol: "ETH", amount: 2.1 }, { symbol: "USDC", amount: 500 }] });
       expect(screen.getByText("Holiday")).toBeTruthy();
       expect(screen.getByText("$12,340")).toBeTruthy();
-      expect(screen.queryByText("2.1 ETH · 500 USDC")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Address and signers" }));
-      expect(screen.getByText("2.1 ETH · 500 USDC")).toBeTruthy();
+      expect(screen.queryByText(/2\.1 ETH · 500 USDC/)).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Address and approvals" }));
+      expect(screen.getByText("Tokens on Base: 2.1 ETH · 500 USDC")).toBeTruthy();
     });
     it("shows ENS names, short addresses and You behind Account details", () => {
       show({ owners: [{ address: ME }, owner(2, "bob.eth"), owner(3)] });
@@ -305,6 +367,12 @@ describe("SafeStep", () => {
       fireEvent.click(screen.getByRole("button", { name: "and 5 more" }));
       expect(screen.getByText("0x0000…0008")).toBeTruthy();
       expect(screen.getAllByRole("button", { name: "Copy address" }).length).toBeGreaterThanOrEqual(8);
+    });
+    it("wraps a long unbroken signer name inside the disclosure instead of overflowing the tile", () => {
+      const ens = `signer${"name".repeat(30)}.eth`;
+      show({ owners: [{ address: ME }, owner(2, ens)] });
+      fireEvent.click(screen.getByRole("button", { name: "Address and signers" }));
+      expect(screen.getByText(ens).className).toMatch(/overflow-wrap|break/);
     });
     it("renders fine with no balance and no ENS", () => {
       show({ owners: [owner(1), owner(2)] });
