@@ -6,6 +6,9 @@
 export type GuideStep = { title: string; body: string; target?: string };
 export type GuideTopic = { id: string; title: string; summary: string; steps: readonly GuideStep[] };
 
+const localDemo = process.env.NEXT_PUBLIC_LOCAL_DEMO === "1";
+const demoFunds = "This demo uses simulated funds. Never send real money to a demo Safe.";
+
 const WELCOME: GuideTopic = {
   id: "welcome",
   title: "Start here",
@@ -81,11 +84,11 @@ const AGENT: GuideTopic = {
     },
     {
       title: "Add it network by network",
-      body: '"Add Lender agent" asks you to confirm in your wallet once for each network. If one fails, "Try again" and nothing was changed on it. You can remove the agent anytime in Settings.',
+      body: "Choose “Add Lender agent” and confirm in your wallet for each listed network. If confirmation fails, check the agent’s status on that network before trying again. You can remove it in Settings.",
     },
     {
       title: "If it cannot be added yet",
-      body: 'Only networks where your wallet owns the deployed Safe are listed. Loans and the agent work on Base and Arbitrum, and "Add Base" sets one up. Chat also needs this wallet to be an owner on every lending network.',
+      body: "The agent works on Base and Arbitrum. “Add Base” records the network and checks whether the Safe already exists there — it does not deploy the Safe. You can grant permission once the Safe is set up and your wallet is an owner.",
     },
   ],
 };
@@ -106,7 +109,7 @@ const OVERVIEW: GuideTopic = {
     },
     {
       title: "Fund the Safe",
-      body: '"Add funds for collateral" gives the address for ETH or wstETH, the assets you can borrow against. When a repayment is short, "USDC repayment guidance" estimates how much more to add per network.',
+      body: localDemo ? demoFunds : "“Add funds for collateral” shows where this Safe accepts ETH or wstETH. For repayment, “USDC repayment guidance” estimates the shortfall on the loan’s network.",
     },
     {
       title: "Handle waiting approvals",
@@ -127,11 +130,11 @@ const WALLET: GuideTopic = {
     },
     {
       title: "Send to your Safe",
-      body: '"Send to Safe" moves ETH, wstETH or USDC where listed, from the connected wallet on a network where the Safe is set up and your wallet is an owner. "Max" keeps a little ETH in the wallet for the network fee.',
+      body: localDemo ? "Wallet transfers are turned off in this demo. Explore the Safe using its simulated balance." : "In the wallet menu, choose “Send to Safe”, pick the asset and network, and enter an amount. Review the fee and destination before confirming in your wallet.",
     },
     {
       title: "Or send from anywhere else",
-      body: "Copy the Safe address and send from another wallet or an exchange on a listed network. Moving money out, for example to a bank, is a separate step outside this app.",
+      body: localDemo ? demoFunds : "To deposit from another wallet or exchange, copy your Safe address and choose a network where the Safe is already set up. Moving money to a bank is a separate step outside this app.",
     },
   ],
 };
@@ -143,7 +146,7 @@ const QUOTE: GuideTopic = {
   steps: [
     {
       title: "Enter the amount",
-      body: '"How much cash do you need?" The hint shows the range this Safe can borrow, from $10 up. Type too much and the "Use" chip applies the current maximum.',
+      body: localDemo ? "Enter the digital dollars you want to receive. If there’s no amount field, retry the balance check or use a funded network. Never send real money to a demo Safe." : "Enter the digital dollars you want to receive. If there’s no amount field, follow the message to retry a balance check, use a funded network, or add eligible collateral.",
       target: "quote-amount",
     },
     {
@@ -169,7 +172,7 @@ const PROPOSAL: GuideTopic = {
   steps: [
     {
       title: "Check what happens",
-      body: 'The page lists what you receive and lock, the terms and the loan health after. "Steps in this transaction" shows the Safe transaction hash to compare with your wallet before approving.',
+      body: "Read “What happens” before approving and compare the Safe transaction hash with your wallet — when you can sign it is shown in that section, otherwise under “Technical details”.",
       target: "proposal-review",
     },
     {
@@ -182,7 +185,7 @@ const PROPOSAL: GuideTopic = {
     },
     {
       title: "If it fails or goes stale",
-      body: 'A failed send offers "Try sending again" or "Make a new plan". An earlier Safe transaction may have to run first, and an out-of-date or replaced plan cannot run. If it still sits in the queue, reject it in your Safe app. Wrong wallet? "Switch wallet".',
+      body: "If sending fails, follow the option to retry or make a new plan. An older or replaced request may still be executable from your Safe. Check the Safe queue and reject an unwanted request there before proceeding.",
     },
   ],
 };
@@ -199,7 +202,7 @@ const LOAN: GuideTopic = {
     },
     {
       title: "Fix an at-risk loan",
-      body: 'Below your At-risk level the fix options appear: add collateral, repay with stablecoin or half of each. Greyed ones need more than the Safe holds. Pick one, review the drafted steps and "Send to Safe" for the owners to sign.',
+      body: "On eligible Base loans the fix options appear below your At-risk level: add collateral, repay with stablecoin, or half of each. A choice can be unavailable when the Safe is short, the agent is off, or a request is in progress. Pick one, review the drafted steps and “Send to Safe” for the owners to sign.",
     },
     {
       title: "Dig deeper",
@@ -215,7 +218,7 @@ const REPAY: GuideTopic = {
   steps: [
     {
       title: "Enter an amount",
-      body: 'On the loan page, enter the amount you want to pay from your Safe’s available digital dollars. Check the estimated debt remaining. To repay everything and unlock collateral, use "Close this loan".',
+      body: 'On the loan page, enter the amount you want to pay from your Safe’s available digital dollars and check the estimated debt remaining. The field and "Close this loan" appear only on a watched loan with a single collateral asset and a confirmed debt.',
       target: "loan-repay",
     },
     {
@@ -224,7 +227,7 @@ const REPAY: GuideTopic = {
     },
     {
       title: "When it is unavailable",
-      body: 'Partial repayment needs a confirmed single-asset debt, a lender that allows it and no open proposal for the loan. The reason is stated under the field. If a request may have reached Safe, "Check repayment status" before starting another.',
+      body: 'When the field shows but repayment is off, the reason is stated under it — the lender may not allow it or a proposal may be open for the loan. If a request may have reached Safe, "Check repayment status" before starting another.',
     },
   ],
 };
@@ -236,12 +239,12 @@ const CLOSE: GuideTopic = {
   steps: [
     {
       title: "What closing does",
-      body: '"Close this loan" drafts a proposal that repays the whole debt and returns the collateral. The owners approve and send it like any other proposal before it runs.',
+      body: '"Close this loan" — shown only on a watched loan with a single collateral asset and a confirmed debt — drafts a proposal that repays the whole debt and returns the collateral. The owners approve and send it like any other proposal before it runs.',
       target: "loan-close",
     },
     {
       title: "Fund the repayment",
-      body: 'Keep enough USDC in the Safe on the same network as the loan. "USDC repayment guidance" on the overview estimates a shortfall, and accrued interest plus the signing buffer can raise it.',
+      body: localDemo ? "Use “USDC repayment guidance” on Overview to explore the estimated shortfall with simulated funds. Never send real money to a demo Safe." : "Use “USDC repayment guidance” on Overview to check the estimated shortfall on the loan’s network. Interest can change the final amount needed.",
     },
     {
       title: "After it runs",
@@ -287,11 +290,11 @@ const RESERVE: GuideTopic = {
     },
     {
       title: "Run and adjust it",
-      body: 'The banner and "Used today" bar show status and use, and the limit refills each period. Every change is signed in the Reserve Safe, including turning "Agent can use reserve" off. In an alert, "Use reserve now" asks you to confirm an exact amount inside your limits.',
+      body: "Turning protection off stops the app from using the reserve immediately. Its spending permission remains until the owners execute the removal in the Reserve Safe. On an eligible alert, an owner of both Safes can choose “Use reserve now”. Confirming the amount submits it under the existing limit, without another signature.",
     },
     {
       title: "Top up or restart",
-      body: 'Send USDC on Base to the Reserve Safe address to refill it. If its owners removed the agent and that removal is confirmed, "Set up protection again" drafts a fresh setup to sign. Protection stays off until it runs.',
+      body: localDemo ? "Use simulated reserve funds in the demo. After a removal is confirmed, “Set up protection again” lets the owners review the limits and approve a fresh setup. Never send real money to a demo Safe." : "Top up the Reserve Safe with USDC on Base. After a removal is confirmed, choose “Set up protection again”, review the limits, and get fresh owner approval. Protection restarts when setup runs.",
     },
   ],
 };
@@ -308,7 +311,7 @@ const ACTIVITY: GuideTopic = {
     },
     {
       title: "Follow a row",
-      body: "Each row links to the proposal, the transaction or the Safe queue. When a repayment or send conflicts with an earlier request, open Activity to find and review it.",
+      body: "Some rows have a proposal, transaction, or Safe queue link. A status update can stand on its own. Look here for an earlier request if a new repayment or send is waiting on it.",
     },
   ],
 };
@@ -325,7 +328,7 @@ const CHAT: GuideTopic = {
     },
     {
       title: "Know its limits",
-      body: "Chat needs the agent added and this wallet an owner on every lending network. Until then the composer offers adding it with one free signature. Alerts, proposal cards and replies appear in the thread, and checks can be delayed.",
+      body: "If chat asks for another owner, sign in with a wallet that owns this Safe on every tracked lending network. An eligible owner can read the thread. Add the agent before sending a new message.",
     },
   ],
 };
@@ -345,7 +348,7 @@ const SETTINGS: GuideTopic = {
     },
     {
       title: "The other panels",
-      body: "Email alerts, Networks, your Safe nickname and the Reserve link live here too. Each has its own topic.",
+      body: "Email alerts, Networks, your Safe nickname and the Reserve link live here too — the Reserve link moves to the sidebar once the Safe has an Aave loan or a linked Reserve. Each has its own topic.",
     },
   ],
 };
@@ -357,12 +360,12 @@ const NETWORKS: GuideTopic = {
   steps: [
     {
       title: "Check where the Safe is ready",
-      body: "Check the listed networks before sending funds. A Safe address on one network does not tell you whether the Safe has been set up on another. Loans and the agent work on Base and Arbitrum.",
+      body: localDemo ? "Explore the listed networks with simulated balances. Never send real money to a demo Safe." : "Check the listed networks before sending funds. A Safe address on one network does not tell you where else the Safe is set up. Loans and the agent work on Base and Arbitrum.",
       target: "settings-networks",
     },
     {
       title: "Add a network and its agent",
-      body: 'In Settings under "Networks", pick one under "Add a network" and confirm in your wallet. The agent needs one signature on each network where it should suggest transactions, and "Add agent" on the row provides it.',
+      body: "In Settings, “Add a network” records the network and checks whether the Safe already exists there — it does not deploy the Safe. Once the Safe is set up and your wallet is an owner, select “Add agent” if you want suggestions there.",
     },
   ],
 };

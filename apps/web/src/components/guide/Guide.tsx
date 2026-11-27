@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -11,7 +12,7 @@ import {
   type ElementType,
   type ReactNode,
 } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { CircleHelp, X } from "lucide-react";
 
 import { guideTopics, topicForPath, type GuideStep, type GuideTopic } from "./guide-content";
@@ -47,6 +48,8 @@ type GuideApi = {
   seenTopics: ReadonlySet<string>;
   /** Mute every inline explanation on this device; the manual Guide button still works. */
   dismissIntros: () => void;
+  /** Undo a mute: let inline explanations appear again on this device. */
+  restoreIntros: () => void;
 };
 
 const GuideContext = createContext<GuideApi | null>(null);
@@ -54,7 +57,8 @@ const GuideContext = createContext<GuideApi | null>(null);
 type GuidePrefs = { hideAll: boolean; seen: ReadonlySet<string> };
 const EMPTY_PREFS: GuidePrefs = { hideAll: false, seen: new Set() };
 
-function readPrefs(): GuidePrefs {
+/** Stored prefs, or null when storage is missing, corrupt or blocked — callers then keep session state. */
+function readStored(): GuidePrefs | null {
   try {
     const raw = JSON.parse(window.localStorage.getItem(STORE_KEY) ?? "null") as
       | { hideAll?: unknown; seen?: unknown }
@@ -64,9 +68,14 @@ function readPrefs(): GuidePrefs {
       seen: new Set(Array.isArray(raw?.seen) ? raw.seen.filter((v): v is string => typeof v === "string") : []),
     };
   } catch {
-    // Missing or corrupt storage: behave like a first visit on this device.
-    return EMPTY_PREFS;
+    return null;
   }
+}
+
+function unionSeen(...sets: ReadonlySet<string>[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of sets) for (const t of s) out.add(t);
+  return out;
 }
 
 function writePrefs(prefs: GuidePrefs) {
@@ -102,35 +111,48 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<GuideView>({ kind: "closed" });
   const overrides = useRef<string[]>([]);
   const [, bumpOverrides] = useState(0);
-  const progress = useRef<{ path: string; topicId: string; step: number } | null>(null);
+  // The query string belongs to the screen's identity: on routes like
+  // /onboarding/agent?safe=<addr> it carries the Safe the page is about.
+  const [query, setQuery] = useState("");
+  const onQuery = useCallback((q: string) => setQuery((prev) => (prev === q ? prev : q)), []);
+  const scopeKey = `${pathKey}\n${query}`;
+  const progress = useRef<{ scope: string; topicId: string; step: number } | null>(null);
   const [spot, setSpot] = useState<HTMLElement | null>(null);
   // Focus hand-off for when the overlay closes: the control to point at next, and the
   // route-local element that last opened the guide (restored on Done/Escape/Dismiss).
   const focusNext = useRef<HTMLElement | null>(null);
-  const trigger = useRef<{ el: HTMLElement; path: string } | null>(null);
+  const trigger = useRef<{ el: HTMLElement; scope: string } | null>(null);
 
   useEffect(() => {
-    setPrefs(readPrefs());
+    setPrefs(readStored() ?? EMPTY_PREFS);
     setReady(true);
   }, []);
 
-  const lastPath = useRef(pathKey);
+  const lastScope = useRef(scopeKey);
   useEffect(() => {
-    if (lastPath.current === pathKey) return;
-    lastPath.current = pathKey;
-    // A different route — or a different Safe — makes a paused step, its highlight and
-    // route-local focus anchors stale. Device prefs deliberately survive navigation.
+    if (lastScope.current === scopeKey) return;
+    lastScope.current = scopeKey;
+    // A different route — or a different Safe in the query, same path or not — makes a
+    // paused step, its highlight and route-local focus anchors stale. Device prefs
+    // deliberately survive navigation.
     setView({ kind: "closed" });
     setSpot(null);
     progress.current = null;
     focusNext.current = null;
     trigger.current = null;
-  }, [pathKey]);
+  }, [scopeKey]);
 
   const markSeen = useCallback((topicId: string) => {
     setPrefs((prev) => {
-      if (prev.seen.has(topicId)) return prev;
-      const next = { hideAll: prev.hideAll, seen: new Set(prev.seen).add(topicId) };
+      // Merge against what other tabs wrote since this one loaded: a tab holding stale
+      // prefs must not write an old hideAll or a partial seen list over a newer dismissal.
+      // The stored toggle wins (last writer wins); seen topics only ever union.
+      const stored = readStored();
+      const seen = unionSeen(stored?.seen ?? EMPTY_PREFS.seen, prev.seen);
+      seen.add(topicId);
+      const hideAll = stored?.hideAll ?? prev.hideAll;
+      if (hideAll === prev.hideAll && seen.size === prev.seen.size) return prev;
+      const next = { hideAll, seen };
       writePrefs(next);
       return next;
     });
@@ -138,11 +160,38 @@ export function GuideProvider({ children }: { children: ReactNode }) {
 
   const dismissIntros = useCallback(() => {
     setPrefs((prev) => {
-      if (prev.hideAll) return prev;
-      const next = { hideAll: true, seen: prev.seen };
+      const stored = readStored();
+      const next = { hideAll: true, seen: unionSeen(stored?.seen ?? EMPTY_PREFS.seen, prev.seen) };
       writePrefs(next);
       return next;
     });
+  }, []);
+
+  const restoreIntros = useCallback(() => {
+    setPrefs((prev) => {
+      if (!prev.hideAll) return prev;
+      const stored = readStored();
+      const next = { hideAll: false, seen: unionSeen(stored?.seen ?? EMPTY_PREFS.seen, prev.seen) };
+      writePrefs(next);
+      return next;
+    });
+  }, []);
+
+  // Another tab's writes arrive as storage events: adopt its toggle, union its seen list,
+  // and write the union back so a stale tab can't drop topics this one already saw.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && e.key !== STORE_KEY) return;
+      const stored = readStored();
+      if (!stored) return;
+      setPrefs((prev) => {
+        const next = { hideAll: stored.hideAll, seen: unionSeen(stored.seen, prev.seen) };
+        if (next.seen.size > stored.seen.size) writePrefs(next);
+        return next;
+      });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const registerTopic = useCallback((topicId: string) => {
@@ -165,10 +214,10 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       setSpot(null);
       focusNext.current = null;
       const from = opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-      if (from) trigger.current = { el: from, path: pathKey };
+      if (from) trigger.current = { el: from, scope: scopeKey };
       const id = topicId ?? currentTopicId;
       // Saved progress resumes only when it still belongs to the topic this open lands on.
-      const resume = progress.current && progress.current.path === pathKey && progress.current.topicId === id ? progress.current : null;
+      const resume = progress.current && progress.current.scope === scopeKey && progress.current.topicId === id ? progress.current : null;
       progress.current = null;
       if (!id) {
         setView({ kind: "index" });
@@ -177,7 +226,7 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       markSeen(id);
       setView({ kind: "topic", topicId: id, step: resume?.step ?? 0 });
     },
-    [currentTopicId, markSeen, pathKey],
+    [currentTopicId, markSeen, scopeKey],
   );
 
   const pickTopic = useCallback(
@@ -194,25 +243,25 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       // The control went away since the step rendered — keep the guide open rather than
       // hiding it over nothing.
       if (!el) return;
-      progress.current = { path: pathKey, topicId, step: stepIndex };
+      progress.current = { scope: scopeKey, topicId, step: stepIndex };
       // A disabled control can be pointed at and explained, not focused.
       focusNext.current = el.matches(":disabled") ? null : el;
       setView({ kind: "closed" });
       setSpot(el);
     },
-    [pathKey],
+    [scopeKey],
   );
 
   const backToGuide = useCallback(() => {
     const saved = progress.current;
     setSpot(null);
-    if (saved && saved.path === pathKey) {
+    if (saved && saved.scope === scopeKey) {
       progress.current = null;
       setView({ kind: "topic", topicId: saved.topicId, step: saved.step });
     } else {
       open();
     }
-  }, [open, pathKey]);
+  }, [open, scopeKey]);
 
   // Base UI calls this as the popup closes: the spotlighted control wins, then the trigger
   // that opened this guide (still route-local and shown), then any visible Guide button —
@@ -221,12 +270,12 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     const pending = focusNext.current;
     focusNext.current = null;
     if (pending?.isConnected) return pending;
-    if (trigger.current?.path === pathKey && isShown(trigger.current.el)) return trigger.current.el;
+    if (trigger.current?.scope === scopeKey && isShown(trigger.current.el)) return trigger.current.el;
     for (const el of document.querySelectorAll<HTMLElement>("[data-guide-button]")) {
       if (isShown(el)) return el;
     }
     return true;
-  }, [pathKey]);
+  }, [scopeKey]);
 
   // Point at the control — scroll and outline only, the guide never clicks it or asks the
   // wallet for anything. Focus arrives via finalFocus once the overlay is gone.
@@ -256,6 +305,23 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [spot]);
 
+  // The highlighted control can unmount or hide while the guide is paused — drop the
+  // spotlight and its banner rather than claim a highlight that no longer exists.
+  useEffect(() => {
+    if (!spot) return;
+    const check = () => {
+      if (!isShown(spot)) setSpot(null);
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-guide-target", "hidden", "style", "class", "disabled"],
+    });
+    return () => observer.disconnect();
+  }, [spot]);
+
   const api = useMemo<GuideApi>(
     () => ({
       pathname,
@@ -266,13 +332,19 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       hideIntros: prefs.hideAll,
       seenTopics: prefs.seen,
       dismissIntros,
+      restoreIntros,
     }),
-    [pathname, ready, currentTopicId, open, registerTopic, prefs, dismissIntros],
+    [pathname, ready, currentTopicId, open, registerTopic, prefs, dismissIntros, restoreIntros],
   );
 
   return (
     <GuideContext.Provider value={api}>
       {children}
+      {/* useSearchParams suspends on statically prerendered routes; it must stay inside
+          its own Suspense boundary or the production build fails. */}
+      <Suspense fallback={null}>
+        <SearchScope onQuery={onQuery} />
+      </Suspense>
       {view.kind !== "closed" && (
         <GuideOverlay
           phone={phone}
@@ -300,6 +372,14 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       )}
     </GuideContext.Provider>
   );
+}
+
+/** Reports the live query string; the provider folds it into the route scope so a
+    same-path Safe switch (?safe=) resets guide state like any other navigation. */
+function SearchScope({ onQuery }: { onQuery: (query: string) => void }) {
+  const query = useSearchParams()?.toString() ?? "";
+  useEffect(() => onQuery(query), [onQuery, query]);
+  return null;
 }
 
 function GuideOverlay({
@@ -372,12 +452,18 @@ function TopicIndex({
   onBack: (back: { topicId: string; step: number }) => void;
   onDone: () => void;
 }) {
+  const guide = useContext(GuideContext);
   return (
     <>
       <div className="flex shrink-0 flex-col gap-2">
         <Title>All guides</Title>
       </div>
       <GuideTopicList onPick={onPick} />
+      {guide?.hideIntros && (
+        <Button variant="ghost" size="sm" className="self-start" onClick={guide.restoreIntros}>
+          Show introductions for new features
+        </Button>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>
           {back && (
@@ -445,13 +531,14 @@ function TopicWalkthrough({
       <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
         {current ? (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3 ring-1 ring-foreground/5">
+            {/* Step number, title and instruction all announce when Next/Back is pressed. */}
             <div aria-live="polite" className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground">
                 Step {i + 1} of {stepCount}
               </p>
               <p className="text-sm font-medium">{current.title}</p>
+              <p className="text-sm text-muted-foreground">{current.body}</p>
             </div>
-            <p className="text-sm text-muted-foreground">{current.body}</p>
             {targetOnPage && (
               <div>
                 <Button variant="outline" size="sm" onClick={() => onShowOnPage(current, i)}>
@@ -523,7 +610,8 @@ export function GuideIntro({ topicId }: { topicId?: string }) {
   useEffect(() => (register && topicId ? register(topicId) : undefined), [register, topicId]);
   const id = topicId ?? (guide ? topicForPath(guide.pathname)?.id : undefined);
   const topic = id ? guideTopics.find((t) => t.id === id) : undefined;
-  if (!guide?.ready || !id || !topic || guide.hideIntros || guide.seenTopics.has(id)) return null;
+  if (!guide?.ready || !id || !topic) return null;
+  if (guide.hideIntros || guide.seenTopics.has(id)) return null;
   return (
     <aside
       role="note"
@@ -539,7 +627,13 @@ export function GuideIntro({ topicId }: { topicId?: string }) {
           <p className="text-sm font-medium">{topic.title}</p>
           <p className="text-sm text-muted-foreground">{topic.summary}</p>
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Dismiss guide" onClick={guide.dismissIntros}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Hide automatic introductions on this device"
+          title="Hide every automatic guide on this device — the Guide button still opens any guide"
+          onClick={guide.dismissIntros}
+        >
           <X />
         </Button>
       </div>

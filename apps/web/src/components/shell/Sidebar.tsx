@@ -137,6 +137,8 @@ export type SidebarProps = SafePickerProps & {
   ownedChainIds?: readonly number[];
   /** Signs the user out; the Sign out button shows only with this. */
   onSignOut?: () => void;
+  /** Renders the sidebar's own Guide button. The phone menu passes false — the header already carries Guide. */
+  showGuide?: boolean;
 };
 
 /** The current Safe's network and address under the picker: the shared identity row, compact. */
@@ -144,7 +146,7 @@ export function SafeIdentity({ safe, chainId }: { safe: Safe; chainId?: number }
   return <SharedSafeIdentity safe={safe} chainId={chainId} compact />;
 }
 
-export function Sidebar({ safe, safes, statusesBySafe, chainId, loans, loansError, pathname, onNavigate, userLabel, userAddress, reserve, ownedChainIds, onSignOut }: SidebarProps) {
+export function Sidebar({ safe, safes, statusesBySafe, chainId, loans, loansError, pathname, onNavigate, userLabel, userAddress, reserve, ownedChainIds, onSignOut, showGuide = true }: SidebarProps) {
   const p = safePaths(safe.address);
   const statuses = loans.map((l) => l.status);
   const { act } = attentionCounts(statuses);
@@ -195,7 +197,7 @@ export function Sidebar({ safe, safes, statusesBySafe, chainId, loans, loansErro
         <Item href={p.activity} active={at(p.activity)}><Activity className="size-4" /> Activity</Item>
         <Item href={p.settings} active={at(p.settings)}><Settings className="size-4" /> Settings</Item>
         {userLabel && <WalletMenu userLabel={userLabel} userAddress={userAddress} safe={safe.address} chainId={chainId} ownedChainIds={ownedChainIds} onSignOut={onSignOut} />}
-        <GuideButton />
+        {showGuide && <GuideButton />}
       </div>
     </div>
   );

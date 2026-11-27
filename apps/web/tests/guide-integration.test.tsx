@@ -6,7 +6,7 @@
 // tests pin our integration contract, not the guide's own UI or topic catalog.
 import { createContext, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const state = vi.hoisted(() => ({
   path: "/s/0xabc",
@@ -25,6 +25,7 @@ vi.mock("wagmi", () => ({
   WagmiContext: createContext({}),
   useAccount: () => ({ address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", isConnected: true }),
   useConnect: () => ({ connect: vi.fn(), connectors: [], isPending: false, error: null }),
+  useDisconnect: () => ({ disconnect: vi.fn() }),
 }));
 
 vi.mock("@/client/auth/useSession", () => ({
@@ -62,7 +63,7 @@ vi.mock("@/client/agent", () => ({
 }));
 vi.mock("@/client/proposals", () => ({ PROPOSAL_SENT_EVENT: "proposal-sent" }));
 vi.mock("@/client/activity", () => ({ useActivity: () => ({ data: [], isPending: false, error: null, refetch: vi.fn() }) }));
-vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ isPending: false, isError: false, data: [] }) }));
+vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ isPending: false, isError: false, data: [] }), useQueryClient: () => ({ clear: vi.fn() }) }));
 vi.mock("@ai-sdk/react", () => ({ useChat: () => ({ messages: [], sendMessage: vi.fn(), setMessages: vi.fn(), status: "ready", error: undefined }) }));
 vi.mock("ai", () => ({ DefaultChatTransport: class {} }));
 vi.mock("@/components/agent/AgentWatchStatus", () => ({ AgentWatchStatus: () => null, useWatchStatus: () => ({ state: "ok", line: "" }) }));
@@ -82,6 +83,7 @@ import { ChatView } from "@/components/chat/ChatView";
 import { ActivityLog } from "@/components/activity/ActivityLog";
 import { SafeStep } from "@/components/onboarding/SafeStep";
 import { AppShell } from "@/components/shell/AppShell";
+import { WrongWallet } from "@/components/proposals/WrongWallet";
 import { MinimalTopBar } from "@/components/shell/MinimalTopBar";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { WalletMenu } from "@/components/wallet/WalletMenu";
@@ -142,6 +144,22 @@ describe("guide entry points", () => {
     state.mediaMatch = match;
     state.shell = { safe: shellSafe, safes: [shellSafe], loans: [], loansError: false, reserve: null, chainIds: [] };
     const { container } = render(<AppShell>content</AppShell>);
+    expect(container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
+  });
+
+  it("keeps the guide button out of the phone menu sheet — the header carries it", async () => {
+    state.mediaMatch = () => false;
+    state.shell = { safe: shellSafe, safes: [shellSafe], loans: [], loansError: false, reserve: null, chainIds: [] };
+    render(<AppShell>content</AppShell>);
+    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    // A Guide button inside the menu sheet would open a second sheet over the page's controls.
+    await waitFor(() => expect(document.querySelector('[data-slot="sheet-content"]')).toBeTruthy());
+    expect(document.querySelector('[data-slot="sheet-content"] [data-guide-button]')).toBeNull();
+    expect(document.querySelectorAll("[data-guide-button]")).toHaveLength(1);
+  });
+
+  it("keeps the guide reachable on the wrong-wallet screen", () => {
+    const { container } = render(<WrongWallet returnTo="/s/0xabc/proposals/p1" />);
     expect(container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
   });
 });

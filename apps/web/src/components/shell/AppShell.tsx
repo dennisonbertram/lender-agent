@@ -121,7 +121,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
               <SheetTitle>Menu</SheetTitle>
               <SheetClose render={<Button variant="ghost" size="icon" className="size-11" aria-label="Close menu" />}><X /></SheetClose>
             </div>
-            <Sidebar safe={safe} safes={safes} statusesBySafe={statusesBySafe} chainId={chainId} loans={loans} loansError={loansError} pathname={pathname} onNavigate={go} userLabel={userLabel} userAddress={userAddress} reserve={reserve} ownedChainIds={ownedChainIds} onSignOut={onSignOut} />
+            <Sidebar safe={safe} safes={safes} statusesBySafe={statusesBySafe} chainId={chainId} loans={loans} loansError={loansError} pathname={pathname} onNavigate={go} userLabel={userLabel} userAddress={userAddress} reserve={reserve} ownedChainIds={ownedChainIds} onSignOut={onSignOut} showGuide={false} />
           </SheetContent>
         </Sheet>
       )}

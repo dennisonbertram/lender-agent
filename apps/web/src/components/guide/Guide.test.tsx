@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 let pathname = "/s/0xabc";
-vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
+let search = "";
+vi.mock("next/navigation", () => ({
+  usePathname: () => pathname,
+  useSearchParams: () => new URLSearchParams(search),
+}));
 
 vi.mock("./guide-content", () => {
   const topics = [
@@ -29,6 +33,12 @@ vi.mock("./guide-content", () => {
       steps: [{ title: "Name it", body: "Pick a name and networks.", target: "create-safe" }],
     },
     {
+      id: "agent",
+      title: "Agent permissions",
+      summary: "Let the agent act for this Safe.",
+      steps: [{ title: "Add the agent", body: "Confirm the permissions.", target: "agent-permissions" }],
+    },
+    {
       id: "overview",
       title: "Overview",
       summary: "Your Safe at a glance.",
@@ -47,6 +57,7 @@ vi.mock("./guide-content", () => {
       const path = p.toLowerCase();
       if (path === "/") return byId("welcome");
       if (path === "/onboarding") return byId("choose-safe");
+      if (path === "/onboarding/agent") return byId("agent");
       if (/^\/s\/[^/]+\/chat$/.test(path)) return byId("chat");
       if (/^\/s\/[^/]+$/.test(path)) return byId("overview");
       return undefined;
@@ -58,9 +69,19 @@ import { GuideButton, GuideIntro, GuideProvider } from "./Guide";
 
 const page = (children: React.ReactNode = null) => <GuideProvider>{children}</GuideProvider>;
 const realFocus = HTMLElement.prototype.focus;
+const PREFS_KEY = "la:guide:v1";
+const storedPrefs = () => JSON.parse(localStorage.getItem(PREFS_KEY)!);
+const fireStorage = (key: string | null = PREFS_KEY) =>
+  act(() => {
+    const e: Event & { key?: string | null } =
+      typeof StorageEvent === "function" ? new StorageEvent("storage", { key }) : new Event("storage");
+    if (e.key !== key) Object.defineProperty(e, "key", { value: key });
+    window.dispatchEvent(e);
+  });
 
 beforeEach(() => {
   pathname = "/s/0xabc";
+  search = "";
   localStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
   // floating-ui probes focus() for preventScroll support; plain jsdom ignores the options
@@ -86,9 +107,9 @@ describe("Guide", () => {
     expect(document.activeElement).toBe(keep);
   });
 
-  it("treats 'Dismiss guide' on an intro as hiding every intro on this device, manual Guide still works", () => {
+  it("treats 'Hide all guides' on an intro as hiding every intro on this device, manual Guide still works", () => {
     const { rerender } = render(page(<><GuideIntro /><GuideButton /></>));
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide automatic introductions on this device" }));
     expect(screen.queryByRole("note")).toBeNull();
     // Other topics and other Safes stay hidden too.
     pathname = "/s/0xdef/chat";
@@ -101,7 +122,7 @@ describe("Guide", () => {
 
   it("persists the global dismiss across remounts", () => {
     const first = render(page(<GuideIntro />));
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide automatic introductions on this device" }));
     first.unmount();
     render(page(<GuideIntro />));
     expect(screen.queryByRole("note")).toBeNull();
@@ -130,7 +151,7 @@ describe("Guide", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     const { rerender } = render(page(<><GuideIntro /><GuideButton /></>));
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide automatic introductions on this device" }));
     pathname = "/s/0xabc/chat";
     rerender(page(<><GuideIntro /><GuideButton /></>));
     expect(screen.queryByRole("note")).toBeNull();
@@ -155,13 +176,15 @@ describe("Guide", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("announces step changes inside a polite live region", () => {
+  it("announces step number, title and instruction inside a polite live region", () => {
     render(page(<GuideButton />));
     fireEvent.click(screen.getByRole("button", { name: "Guide" }));
     const live = document.querySelector("[aria-live=polite]");
     expect(live?.textContent).toContain("Step 1 of 3");
+    expect(live?.textContent).toContain("See what the Safe holds.");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(live?.textContent).toContain("Step 2 of 3");
+    expect(live?.textContent).toContain("Pick what to do next.");
   });
 
   it("opens into the 'All topics' index and starts any feature's guide from it", () => {
@@ -315,5 +338,100 @@ describe("Guide", () => {
     render(page(<GuideIntro />));
     fireEvent.keyDown(screen.getByRole("note"), { key: "Escape" });
     expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("labels the global hide with its device-wide effect", () => {
+    render(page(<GuideIntro />));
+    const dismiss = screen.getByRole("button", { name: "Hide automatic introductions on this device" });
+    expect(dismiss.getAttribute("title")).toMatch(/every automatic guide on this device/i);
+  });
+
+  it("restores introductions for new features from the topic index", () => {
+    const { rerender } = render(page(<><GuideIntro /><GuideButton /></>));
+    fireEvent.click(screen.getByRole("button", { name: "Hide automatic introductions on this device" }));
+    expect(screen.queryByRole("note")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "All topics" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show introductions for new features" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    // Automatic intros are enabled again on this device.
+    pathname = "/s/0xabc/chat";
+    rerender(page(<GuideIntro />));
+    expect(screen.getByText("Ask the agent.")).toBeTruthy();
+  });
+
+  it("keeps another tab's device-wide dismissal when this tab later writes its seen list", () => {
+    render(page(<><GuideIntro /><GuideButton /></>));
+    // Another tab muted intros after this one was already open — a stale write must not undo it.
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ v: 1, hideAll: true, seen: [] }));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    expect(storedPrefs().hideAll).toBe(true);
+    expect(storedPrefs().seen).toContain("overview");
+  });
+
+  it("applies another tab's dismissal without dropping topics this tab already saw", () => {
+    const { rerender } = render(page(<><GuideIntro /><GuideButton /></>));
+    fireEvent.click(screen.getByRole("button", { name: "Walk through the steps" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    // The other tab's stored snapshot predates this tab's "overview" write.
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ v: 1, hideAll: true, seen: [] }));
+    fireStorage();
+    pathname = "/s/0xabc/chat";
+    rerender(page(<GuideIntro />));
+    expect(screen.queryByRole("note")).toBeNull();
+    // The union is written back so the other tab learns about "overview" too.
+    expect(storedPrefs().hideAll).toBe(true);
+    expect(storedPrefs().seen).toContain("overview");
+  });
+
+  it("resets an open walkthrough when only the Safe query changes on the same route", async () => {
+    pathname = "/onboarding/agent";
+    search = "safe=0xaaa";
+    const { rerender } = render(page(<GuideButton />));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    expect(screen.getByText("Step 1 of 1")).toBeTruthy();
+    search = "safe=0xbbb";
+    rerender(page(<GuideButton />));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("clears a paused spotlight when the Safe query changes on the same route", async () => {
+    pathname = "/onboarding/agent";
+    search = "safe=0xaaa";
+    const content = () => page(<><button data-guide-target="agent-permissions">Add agent</button><GuideButton /></>);
+    const { rerender } = render(content());
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show on page" }));
+    expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+    search = "safe=0xbbb";
+    rerender(content());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to guide" })).toBeNull());
+  });
+
+  it("clears the paused highlight when the highlighted control disappears", async () => {
+    const { rerender } = render(page(<>
+      <div id="target-wrap"><button data-guide-target="overview-balances">Balances card</button></div>
+      <GuideButton />
+    </>));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show on page" }));
+    expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+    rerender(page(<><div id="target-wrap" /><GuideButton /></>));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to guide" })).toBeNull());
+  });
+
+  it("clears the paused highlight when the highlighted control is hidden", async () => {
+    render(page(<>
+      <div id="target-wrap"><button data-guide-target="overview-balances">Balances card</button></div>
+      <GuideButton />
+    </>));
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show on page" }));
+    expect(screen.getByRole("button", { name: "Back to guide" })).toBeTruthy();
+    act(() => {
+      document.getElementById("target-wrap")!.setAttribute("hidden", "");
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to guide" })).toBeNull());
   });
 });
