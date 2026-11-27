@@ -70,7 +70,7 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
     expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
-    expect(screen.getByText("$4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
+    expect(screen.getByText("Supported balance $4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: `Open Safe Holiday ${shortAddress(SAFE_A)}` }));
@@ -102,7 +102,9 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
     // The balance's real coverage is on the tile face before expanding — under the Arbitrum filter it is not relabeled.
     const safeList = screen.getByRole("list", { name: "Your Safes" });
-    expect(within(safeList).getByRole("listitem").textContent).toContain("$4,500 found on Base. Other balances are unavailable.");
+    const tileText = within(safeList).getByRole("listitem").textContent ?? "";
+    expect(tileText).toContain("$4,500 found on Base. Other balances are unavailable.");
+    expect(tileText).toContain("Supported balance");
     fireEvent.click(screen.getByRole("button", { name: "Address on Arbitrum" }));
     expect(screen.getByText("Approval details unavailable on Arbitrum.")).toBeTruthy();
     expect(screen.queryByText(/Approvals on Arbitrum/)).toBeNull();

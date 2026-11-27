@@ -69,7 +69,7 @@ describe("SafeStep", () => {
     }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     expect(screen.getByText(/Setup recovery is shown even though this Safe does not match/)).toBeTruthy();
-    expect(screen.getByText("$4,500 on Base")).toBeTruthy();
+    expect(screen.getByText("Supported balance $4,500 on Base")).toBeTruthy();
     fireEvent.click(screen.getByText("Address and signers on Base"));
     expect(screen.getByRole("link", { name: "View on Basescan" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "View on Arbiscan" })).toBeNull();
@@ -100,12 +100,16 @@ describe("SafeStep", () => {
     expect(screen.getByText("You")).toBeTruthy();
     expect(screen.queryByText("Only you approve transactions.")).toBeNull();
   });
-  it("does not call a partially measured zero balance empty", () => {
+  it("labels partial zero as supported balance without calling the whole Safe empty", () => {
     render(<SafeStep found={[{
       address: A, threshold: 1, ownerCount: 1, chainIds: [8453, 42161], balanceUsd: 0, balanceChainIds: [8453],
     }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
-    expect(screen.getByRole("listitem").textContent).toContain("$0 found on Base. Other balances are unavailable.");
-    expect(screen.queryByText("Empty. Add funds before borrowing.")).toBeNull();
+    const tile = screen.getByRole("listitem");
+    expect(tile.textContent).toContain("$0");
+    expect(tile.textContent).toContain("Supported balance");
+    expect(within(tile).getAllByText("Supported balance", { exact: true })).toHaveLength(1);
+    expect(tile.textContent).toContain("found on Base. Other balances are unavailable.");
+    expect(screen.queryByText("No supported funds found.")).toBeNull();
   });
   it("replaces a discovered partial setup with its single recovery action and suppresses the saved duplicate", () => {
     render(<SafeStep found={[{ address: A, name: "Holiday", threshold: 2, ownerCount: 3, chainIds: [8453, 42161] }]} known={[
@@ -145,10 +149,10 @@ describe("SafeStep", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use another wallet" }));
     expect(other).toHaveBeenCalled();
   });
-  it("shows name or the short address, Empty for $0, and keeps the address with copy behind Account details", () => {
-    render(<SafeStep found={[{ address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 0 }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+  it("shows name or the short address, supported-funds status, and address behind Account details", () => {
+    render(<SafeStep found={[{ address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 0, assets: [{ symbol: "TOKEN", amount: 0 }] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     expect(screen.getByText(shortAddress(A))).toBeTruthy();
-    expect(screen.getByText("Empty. Add funds before borrowing.")).toBeTruthy();
+    expect(screen.getByText("No supported funds found.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy address" })).toBeNull();
     fireEvent.click(screen.getByText("Address and approvals"));
     expect(screen.getByRole("button", { name: "Copy address" })).toBeTruthy();
@@ -158,6 +162,23 @@ describe("SafeStep", () => {
     render(<SafeStep found={[{ address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 7500 }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     expect(screen.getByText(shortAddress(A))).toBeTruthy();
     expect(screen.getAllByText(/\$7,500/)).toHaveLength(1);
+  });
+  it("keeps positive supported assets visible when their estimated dollar value rounds below one cent", () => {
+    render(<SafeStep found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 0.004,
+      assets: [{ symbol: "TOKEN", amount: 1 }],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByText("under $0.01")).toBeTruthy();
+    expect(screen.queryByText("No supported funds found.")).toBeNull();
+  });
+  it("does not call positive supported assets valueless when their estimated price is zero", () => {
+    render(<SafeStep found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 0,
+      assets: [{ symbol: "TOKEN", amount: 1 }],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.getByText("$0")).toBeTruthy();
+    expect(screen.getByText("Supported balance")).toBeTruthy();
+    expect(screen.queryByText("No supported funds found.")).toBeNull();
   });
   it("lays found Safes out as an equal-width fluid tile grid, each tile carrying the pick action and its disclosure", () => {
     render(<SafeStep found={[
@@ -435,6 +456,7 @@ describe("SafeStep", () => {
     });
     it("renders fine with no balance and no ENS", () => {
       show({ owners: [owner(1), owner(2)] });
+      expect(screen.getByText("Balance unavailable")).toBeTruthy();
       expect(screen.queryByText(/\$/)).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Address and signers" }));
       expect(screen.getByText("2 of 3 owners must approve each transaction")).toBeTruthy();

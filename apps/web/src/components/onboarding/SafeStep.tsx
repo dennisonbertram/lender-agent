@@ -33,7 +33,7 @@ const quietToggleClass = "rounded-sm underline underline-offset-2 hover:text-for
 /** Both pick lists: fluid auto-fill tracks of at least ~19rem — four-plus columns at
     1440px, five-plus at 1920px, one on phones — so a lone card keeps its natural size
     instead of stretching and none is squeezed below the track minimum. */
-const gridClass = "grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3";
+const gridClass = "grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3 has-[[aria-expanded=true]]:items-start";
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const amountText = (n: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: n < 1 ? 4 : 2 }).format(n);
 /** The tile's title: its name, or the short address so identical unnamed Safes stay distinct. */
@@ -155,6 +155,37 @@ function hasCompleteBalanceCoverage(safe: FoundSafeCard) {
   return safe.chainIds.every((id) => balanceChainIds.includes(id));
 }
 
+function supportedBalanceAmount(value: number) {
+  if (value > 0 && value < 0.01) return "under $0.01";
+  return usd(value, value > 0 && value < 1 ? 2 : 0);
+}
+
+function supportedBalanceDetails(safe: FoundSafeCard) {
+  if (safe.balanceUsd === undefined) return "Balance unavailable";
+  const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
+  const networks = balanceChainIds.map(chainChipId).join(" and ");
+  const complete = hasCompleteBalanceCoverage(safe);
+  const hasPositiveAsset = safe.assets?.some((asset) => asset.amount > 0) ?? false;
+  if (safe.balanceUsd === 0 && !hasPositiveAsset && complete) return "No supported funds found.";
+  if (!complete) return `found on ${networks || "the reported networks"}. Other balances are unavailable.`;
+  if (balanceChainIds.length > 1) return `Total across ${networks}`;
+  return "";
+}
+
+function supportedBalanceSummary(safe: FoundSafeCard, includeSingleNetwork = false) {
+  if (safe.balanceUsd === undefined) return "Supported balance unavailable.";
+  const details = supportedBalanceDetails(safe);
+  if (details === "No supported funds found.") return details;
+  const amount = supportedBalanceAmount(safe.balanceUsd);
+  if (details.startsWith("found on ")) return `Supported balance ${amount} ${details}`;
+  if (details.startsWith("Total across ")) return `Supported balance ${amount}. ${details}`;
+  if (includeSingleNetwork) {
+    const balanceChainIds = safe.balanceChainIds ?? safe.chainIds;
+    if (balanceChainIds.length === 1) return `Supported balance ${amount} on ${chainChipId(balanceChainIds[0])}`;
+  }
+  return `Supported balance ${amount}`;
+}
+
 /** The networks ownership is verified on, as names with their marks — or the honest fallback. */
 function VerifiedNetworks({ ids }: { ids: number[] }) {
   return ids.length > 0 ? (
@@ -181,19 +212,16 @@ function SafeNetworkInfo({ address, safe, verifiedChainIds, selectedChainId, wal
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   const balanceChainIds = safe ? safe.balanceChainIds ?? safe.chainIds : [];
   const hasDistinctBalanceCoverage = safe && verifiedChainIds.length > 1;
+  const balanceSummary = safe && showBalanceAmount ? supportedBalanceSummary(safe, true) : undefined;
   const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   const detailsLabel = detailsToggleLabel(content, name, verifiedChainIds, selectedChainId);
   return (
     <div className="flex flex-col gap-1.5">
       {showVerified && <VerifiedNetworks ids={verifiedChainIds} />}
       {showApproval && <span className="text-xs text-muted-foreground">{approvalLabel(safe, verifiedChainIds, selectedChainId)}</span>}
-      {(showBalanceAmount || hasDistinctBalanceCoverage) && safe?.balanceUsd !== undefined && balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">
-        {showBalanceAmount
-          ? hasCompleteBalanceCoverage(safe)
-            ? `${usd(safe.balanceUsd)} ${balanceChainIds.length === 1 ? "on" : "across"} ${balanceChainIds.map(chainChipId).join(" and ")}`
-            : `${usd(safe.balanceUsd)} found on ${balanceChainIds.map(chainChipId).join(" and ")}. Other balances are unavailable.`
-          : `Total across ${balanceChainIds.map(chainChipId).join(" and ")}`}
-      </span>}
+      {(showBalanceAmount || hasDistinctBalanceCoverage) && safe && (showBalanceAmount
+        ? <span className="text-xs text-muted-foreground">{balanceSummary}</span>
+        : balanceChainIds.length > 0 && <span className="text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>)}
       <CardDetails address={address} chainId={detailChainId} owners={owners} wallet={wallet} label={detailsLabel} />
     </div>
   );
@@ -248,27 +276,23 @@ function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
   const { threshold, ownerCount } = resolveApprovalSnapshot(s, s.chainIds, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
   const balanceChainIds = s.balanceChainIds ?? s.chainIds;
+  const balanceDetails = supportedBalanceDetails(s);
   const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   return (
     <li className={tileClass}>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <TileTitle safe={s} />
-        {s.balanceUsd === undefined ? (
-          <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
-        ) : (
-          <span className="text-lg font-semibold tabular-nums">{usd(s.balanceUsd)}</span>
-        )}
-        {s.balanceUsd !== undefined && !hasCompleteBalanceCoverage(s) && (
-          <span className="-mt-1 text-xs text-muted-foreground">
-            {" "}found on {s.balanceChainIds?.length ? s.balanceChainIds.map(chainChipId).join(" and ") : "the reported networks"}. Other balances are unavailable.
-          </span>
-        )}
-        {s.balanceUsd === 0 && hasCompleteBalanceCoverage(s) && (
-          <span className="-mt-1 text-xs text-warning-text">Empty. Add funds before borrowing.</span>
-        )}
-        {s.balanceUsd !== undefined && hasCompleteBalanceCoverage(s) && balanceChainIds.length > 1 && (
-          <span className="-mt-1 text-xs text-muted-foreground">Total across {balanceChainIds.map(chainChipId).join(" and ")}</span>
-        )}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-xs text-muted-foreground">Supported balance</span>{" "}
+          {s.balanceUsd === undefined ? (
+            <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
+          ) : (
+            <span className="text-lg font-semibold tabular-nums">{supportedBalanceAmount(s.balanceUsd)}</span>
+          )}
+        </div>
+        {s.balanceUsd !== undefined && balanceDetails && <span className={cn("-mt-1 text-xs", balanceDetails === "No supported funds found." ? "text-warning-text" : "text-muted-foreground")}>
+          {" "}{balanceDetails}
+        </span>}
         <VerifiedNetworks ids={s.chainIds} />
       </div>
       <TileActions

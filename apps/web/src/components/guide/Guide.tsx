@@ -628,10 +628,9 @@ export function GuideIntro({ topicId, compact = false }: { topicId?: string; com
   if (compact) {
     // Inline form for screens whose own heading already carries the topic's title:
     // a quiet sentence with the walkthrough link and the device-wide hide grouped
-    // into one unbreakable run — they drop to the next line together instead of
-    // stranding the × — no second card, no second title, no competing CTA. The
-    // link's size="inline" overlay and the icon's -my-3 keep 44px coarse-pointer
-    // targets without inflating the line.
+    // into one unbreakable run, so they drop to the next line together. No second
+    // card or title. Coarse-pointer targets reserve their height in the line, and
+    // the walkthrough target stays within its own button.
     return (
       <aside
         role="note"
@@ -643,14 +642,13 @@ export function GuideIntro({ topicId, compact = false }: { topicId?: string; com
       >
         <p>
           {topic.summary}{" "}
-          <span className="inline-flex items-center gap-1">
-            <Button variant="link" size="inline" onClick={(e) => guide.open(id, e.currentTarget)}>
+          <span className="inline-flex items-center gap-1 pointer-coarse:min-h-11">
+            <Button variant="link" size="inline" className="pointer-coarse:py-3 pointer-coarse:after:inset-y-0" onClick={(e) => guide.open(id, e.currentTarget)}>
               Walk through the steps
             </Button>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="-my-3"
               aria-label="Hide automatic introductions on this device"
               title="Hide every automatic guide on this device — the Guide button still opens any guide"
               onClick={guide.dismissIntros}
