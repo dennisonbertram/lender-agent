@@ -171,7 +171,7 @@ export function StepBar({ labels, step, complete = false, variant = "default" }:
             const state = segmentState(i, step, complete);
             return (
               <li key={l} className="flex min-w-0 shrink items-center gap-1.5">
-                <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold", state === "done" ? "bg-success/15 text-success-text" : state === "current" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold", state === "done" ? "bg-success/15 text-success-text" : state === "current" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
                   {state === "done" ? <Check className="size-3" /> : i + 1}
                 </span>
                 <span aria-current={state === "current" ? "step" : undefined} className={cn("min-w-0 text-xs leading-tight break-words", state === "done" ? "font-medium text-success-text" : state === "current" ? "font-semibold text-foreground" : "text-muted-foreground")}>
