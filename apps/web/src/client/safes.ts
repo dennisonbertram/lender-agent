@@ -19,8 +19,10 @@ type OwnedChainData = {
   safes: OwnedSafeSlice[];
   partial: boolean;
   streaming: boolean;
-  staleAddresses: string[];
-  pendingAddresses: string[];
+  ownershipStaleAddresses: string[];
+  ownershipPendingAddresses: string[];
+  balanceStaleAddresses: string[];
+  balancePendingAddresses: string[];
 };
 
 const asOwnedSlice = (safe: FoundSafe): OwnedSafeSlice => ({
@@ -69,9 +71,16 @@ export type OwnedSafesQuery = {
   partial: boolean;
   /** Per-network freshness for any retained row data. */
   freshnessByChainId: Record<number, "fresh" | "stale" | "unavailable">;
-  /** Previously verified rows whose candidate is still being checked on a stream. */
+  /** Previously verified ownership rows awaiting a result, keyed by chain ID. */
+  ownershipPendingByChainId: Record<number, string[]>;
+  /** Rows kept after ownership could not be checked, keyed by chain ID. */
+  ownershipStaleByChainId: Record<number, string[]>;
+  /** Verified ownership rows whose balance/name enrichment is still running. */
+  balancePendingAddresses: string[];
+  /** Last known balances whose current enrichment failed or was interrupted, keyed by chain ID. */
+  balanceStaleByChainId: Record<number, string[]>;
+  /** Aggregate compatibility aliases for row status. */
   pendingAddresses: string[];
-  /** Previously verified rows retained only because their candidate result is indeterminate. */
   staleAddresses: string[];
   /** The first failed network's error, when one could not be looked up; the others' rows stay in `data`. */
   error: Error | null;
@@ -111,20 +120,28 @@ export function useOwnedSafes(wallet?: string): OwnedSafesQuery {
           const stale = previousRows.filter((safe) => {
             const address = safe.address.toLowerCase();
             if (freshKeys.has(address) || removed.has(address)) return false;
-            return indeterminate.has(address) || body.partial === true && (!hasDispositions || !sentKnown.has(address));
+            return indeterminate.has(address) || body.partial === true && !hasDispositions && sentKnown.has(address);
           }).map((safe) => safe.address);
           const byAddress = new Map([...previousRows.filter((safe) => stale.some((a) => a.toLowerCase() === safe.address.toLowerCase())).map((safe) => [safe.address.toLowerCase(), safe] as const), ...fresh.map((safe) => [safe.address.toLowerCase(), safe] as const)]);
-          return { safes: [...byAddress.values()], partial: body.partial === true, streaming: false, staleAddresses: stale, pendingAddresses: [] };
+          const staleWithBalance = previousRows.filter((safe) => safe.balanceUsd !== undefined && stale.some((address) => address.toLowerCase() === safe.address.toLowerCase())).map((safe) => safe.address);
+          return { safes: [...byAddress.values()], partial: body.partial === true, streaming: false, ownershipStaleAddresses: stale, ownershipPendingAddresses: [], balanceStaleAddresses: staleWithBalance, balancePendingAddresses: [] };
         }
 
         const baseline = new Map(previousRows.map((safe) => [safe.address.toLowerCase(), safe]));
         const current = new Map(baseline);
-        const pending = new Set(baseline.keys());
-        const stale = new Set<string>();
+        const knownSet = new Set(known.map((address) => address.toLowerCase()));
+        const ownershipPending = new Set(baseline.keys());
+        const ownershipStale = new Set<string>();
+        const balancePending = new Set<string>();
+        const balanceStale = new Set<string>();
         let partial = false;
         let streaming = true;
         const update = () => queryClient.setQueryData<OwnedChainData>(queryKey, {
-          safes: [...current.values()], partial, streaming, staleAddresses: [...stale], pendingAddresses: [...pending].map((address) => current.get(address)?.address ?? address),
+          safes: [...current.values()], partial, streaming,
+          ownershipStaleAddresses: [...ownershipStale].map((address) => current.get(address)?.address ?? address),
+          ownershipPendingAddresses: [...ownershipPending].map((address) => current.get(address)?.address ?? address),
+          balanceStaleAddresses: [...balanceStale].map((address) => current.get(address)?.address ?? address),
+          balancePendingAddresses: [...balancePending].map((address) => current.get(address)?.address ?? address),
         });
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
         try {
@@ -152,18 +169,33 @@ export function useOwnedSafes(wallet?: string): OwnedSafesQuery {
               if (event.type === "candidate") {
                 if (event.safe) {
                   const safe = decodeStreamSafe(event.safe);
-                  current.set(safe.address.toLowerCase(), safe);
-                  if (event.complete) pending.delete(safe.address.toLowerCase());
-                  else pending.add(safe.address.toLowerCase());
-                  stale.delete(safe.address.toLowerCase());
+                  const key = safe.address.toLowerCase();
+                  const previous = current.get(key);
+                  const hasBalance = safe.balanceUsd !== undefined;
+                  const merged = hasBalance || !previous || previous.balanceUsd === undefined ? safe : { ...safe, balanceUsd: previous.balanceUsd, ...(previous.assets ? { assets: previous.assets } : {}) };
+                  current.set(key, merged);
+                  ownershipPending.delete(key);
+                  ownershipStale.delete(key);
+                  if (event.complete) {
+                    balancePending.delete(key);
+                    if (hasBalance) balanceStale.delete(key);
+                    else if (previous?.balanceUsd !== undefined) balanceStale.add(key);
+                  } else balancePending.add(key);
                 } else if (event.address && ["not-owned", "removed"].includes(event.status ?? "")) {
-                  current.delete(event.address.toLowerCase());
-                  pending.delete(event.address.toLowerCase());
-                  stale.delete(event.address.toLowerCase());
+                  const key = event.address.toLowerCase();
+                  current.delete(key);
+                  ownershipPending.delete(key);
+                  ownershipStale.delete(key);
+                  balancePending.delete(key);
+                  balanceStale.delete(key);
                 } else if (event.address && event.status === "indeterminate") {
                   const key = event.address.toLowerCase();
-                  pending.delete(key);
-                  if (current.has(key)) stale.add(key);
+                  ownershipPending.delete(key);
+                  balancePending.delete(key);
+                  if (current.has(key)) {
+                    ownershipStale.add(key);
+                    if (current.get(key)?.balanceUsd !== undefined) balanceStale.add(key);
+                  }
                 } else throw new Error("Invalid Safe discovery candidate event.");
                 update();
                 continue;
@@ -173,11 +205,20 @@ export function useOwnedSafes(wallet?: string): OwnedSafesQuery {
                 streaming = false;
                 partial = event.partial === true;
                 if (partial) {
-                  for (const address of pending) if (current.has(address)) stale.add(address);
+                  for (const address of ownershipPending) {
+                    if (current.has(address) && knownSet.has(address)) {
+                      ownershipStale.add(address);
+                      if (current.get(address)?.balanceUsd !== undefined) balanceStale.add(address);
+                    }
+                    else current.delete(address);
+                  }
+                  for (const address of balancePending) if (current.has(address) && current.get(address)?.balanceUsd !== undefined) balanceStale.add(address);
                 } else {
-                  for (const address of pending) current.delete(address);
+                  for (const address of ownershipPending) current.delete(address);
+                  for (const address of balancePending) if (current.has(address) && current.get(address)?.balanceUsd !== undefined) balanceStale.add(address);
                 }
-                pending.clear();
+                ownershipPending.clear();
+                balancePending.clear();
                 update();
                 continue;
               }
@@ -186,12 +227,16 @@ export function useOwnedSafes(wallet?: string): OwnedSafesQuery {
             if (chunk.done) break;
           }
           if (buffer.trim() || !started || !finished) throw new Error("Safe discovery stream was truncated. Retry to check again.");
-          return { safes: [...current.values()], partial, streaming: false, staleAddresses: [...stale].map((address) => current.get(address)?.address ?? address), pendingAddresses: [] };
+          return { safes: [...current.values()], partial, streaming: false,
+            ownershipStaleAddresses: [...ownershipStale].map((address) => current.get(address)?.address ?? address), ownershipPendingAddresses: [],
+            balanceStaleAddresses: [...balanceStale].map((address) => current.get(address)?.address ?? address), balancePendingAddresses: [...balancePending].map((address) => current.get(address)?.address ?? address) };
         } catch (error) {
-          for (const address of [...pending]) if (current.has(address) && baseline.has(address)) {
-            stale.add(address);
-            pending.delete(address);
+          for (const address of ownershipPending) if (current.has(address)) {
+            ownershipStale.add(address);
           }
+          ownershipPending.clear();
+          for (const address of balancePending) if (current.has(address) && current.get(address)?.balanceUsd !== undefined) balanceStale.add(address);
+          balancePending.clear();
           partial = true;
           streaming = false;
           update();
@@ -212,8 +257,24 @@ export function useOwnedSafes(wallet?: string): OwnedSafesQuery {
         const result = results[i];
         return [chainId, result?.isError ? (result.data === undefined ? "unavailable" : "stale") : result?.data !== undefined ? "fresh" : "unavailable"];
       })) as OwnedSafesQuery["freshnessByChainId"];
-      const staleAddresses = [...new Set(results.flatMap((r) => r.data?.staleAddresses ?? []))];
-      const pendingAddresses = [...new Set(results.flatMap((r) => r.data?.pendingAddresses ?? []))];
+      const ownershipPendingByChainId = Object.fromEntries(DISCOVERY_CHAIN_IDS.map((chainId, i) => [chainId, results[i]?.data?.ownershipPendingAddresses ?? []]));
+      const ownershipStaleByChainId = Object.fromEntries(DISCOVERY_CHAIN_IDS.map((chainId, i) => {
+        const result = results[i];
+        const stale = new Set(result?.data?.ownershipStaleAddresses ?? []);
+        if (result?.isError) for (const safe of result.data?.safes ?? []) stale.add(safe.address);
+        return [chainId, [...stale]];
+      }));
+      const balanceStaleByChainId = Object.fromEntries(DISCOVERY_CHAIN_IDS.map((chainId, i) => {
+        const result = results[i];
+        const stale = new Set(result?.data?.balanceStaleAddresses ?? []);
+        if (result?.isError) for (const safe of result.data?.safes ?? []) if (safe.balanceUsd !== undefined) stale.add(safe.address);
+        return [chainId, [...stale]];
+      }));
+      const balancePendingAddresses = [...new Set(results.flatMap((r) => r.data?.balancePendingAddresses ?? []))];
+      const ownershipPendingAddresses = [...new Set(Object.values(ownershipPendingByChainId).flat())];
+      const ownershipStaleAddresses = [...new Set(Object.values(ownershipStaleByChainId).flat())];
+      const staleAddresses = [...new Set([...ownershipStaleAddresses, ...Object.values(balanceStaleByChainId).flat()])];
+      const pendingAddresses = [...new Set([...ownershipPendingAddresses, ...balancePendingAddresses])];
       const pending = !wallet || bindingError || !anyData || results.some((r) => r.data?.streaming && r.data.safes.length === 0);
       return {
         data: bindingError ? undefined : anyData ? mergeOwnedSafeSlices(results.flatMap((r) => r.data?.safes ?? [])) : undefined,
@@ -223,6 +284,10 @@ export function useOwnedSafes(wallet?: string): OwnedSafesQuery {
         incomplete: pending || failed.length > 0 || results.some((r) => r.isPending || r.data?.streaming) || partial || pendingAddresses.length > 0,
         partial,
         freshnessByChainId,
+        ownershipPendingByChainId,
+        ownershipStaleByChainId,
+        balancePendingAddresses,
+        balanceStaleByChainId,
         staleAddresses,
         pendingAddresses,
         error: authError ?? (failed[0]?.error as Error | undefined) ?? (partial ? new Error("Some Safes could not be verified. Retry to check again.") : null),

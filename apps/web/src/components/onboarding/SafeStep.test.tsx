@@ -69,7 +69,9 @@ describe("SafeStep", () => {
     }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     expect(screen.getByText(/Setup recovery is shown even though this Safe does not match/)).toBeTruthy();
-    expect(screen.getByText("Supported balance $4,500 on Base")).toBeTruthy();
+    const recoveryTile = screen.getAllByRole("listitem").find((item) => within(item).queryByRole("button", { name: "Finish setting up" }));
+    expect(recoveryTile?.textContent).toContain("$4,500");
+    expect(screen.getAllByText("Verified ownership on").some((label) => label.parentElement?.textContent?.includes("Base"))).toBe(true);
     fireEvent.click(screen.getByText("Address and signers on Base"));
     expect(screen.getByRole("link", { name: "View on Basescan" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "View on Arbiscan" })).toBeNull();
@@ -128,8 +130,8 @@ describe("SafeStep", () => {
       ],
     }]} freshnessByChainId={{ 8453: "fresh", 42161: "stale" }} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     const tile = screen.getByRole("listitem");
-    expect(tile.textContent).toContain("Last known supported balance");
-    expect(tile.textContent).toContain("Cached ownership, approvals, and balances on Arbitrum");
+    expect(tile.textContent).toContain("Supported balance $5,000");
+    expect(tile.textContent).toContain("Ownership and approval details on Arbitrum are from the last successful check.");
     expect(tile.textContent).not.toContain("Verified ownership on Base and Arbitrum");
     fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
     fireEvent.click(screen.getByRole("button", { name: "Address" }));
@@ -162,6 +164,40 @@ describe("SafeStep", () => {
     expect(within(tile).queryByText("No supported funds found.")).toBeNull();
     expect(within(tile).queryByText("Verified ownership on")).toBeNull();
   });
+  it("keeps Base ownership and approvals usable when the same Safe is stale on Arbitrum", () => {
+    const wallet = "0x00000000000000000000000000000000000000a1";
+    const coowner = "0x00000000000000000000000000000000000000b2";
+    render(<SafeStep freshnessByChainId={{ 8453: "fresh", 42161: "stale" }} ownershipPendingByChainId={{ 8453: [], 42161: [] }} ownershipStaleByChainId={{ 8453: [], 42161: [A] }} found={[{
+      address: A, threshold: 2, ownerCount: 2, chainIds: [8453, 42161], discoveredChainIds: [8453, 42161],
+      networkDetails: [
+        { chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: wallet }] },
+        { chainId: 42161, threshold: 2, ownerCount: 2, owners: [{ address: wallet }, { address: coowner }] },
+      ],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tile = screen.getByRole("listitem");
+    expect(within(tile).getByText("Verified ownership on").parentElement?.textContent).toContain("Base");
+    expect(within(tile).getByText("Verified ownership on").parentElement?.textContent).not.toContain("Arbitrum");
+    fireEvent.click(screen.getByRole("button", { name: "Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Address and signers on Base" }));
+    expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    expect(screen.getByText("Approval details unavailable on Arbitrum")).toBeTruthy();
+    expect(screen.queryByText(/2 of 2 owners/)).toBeNull();
+  });
+  it("keeps freshly verified approvals visible while balance enrichment is pending", () => {
+    const owner = "0x00000000000000000000000000000000000000a1";
+    render(<SafeStep wallet={owner} balancePendingAddresses={[A]} found={[{
+      address: A, threshold: 1, ownerCount: 1, chainIds: [8453], discoveredChainIds: [8453], balanceUsd: 2500,
+      networkDetails: [{ chainId: 8453, threshold: 1, ownerCount: 1, owners: [{ address: owner }] }],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tile = screen.getByRole("listitem");
+    expect(tile.textContent).toContain("Last known supported balance");
+    expect(tile.textContent).toContain("$2,500");
+    expect(tile.textContent).toContain("Checking the balance on the verified networks.");
+    fireEvent.click(within(tile).getByRole("button", { name: "Address and signers" }));
+    expect(screen.getByText("Only you approve transactions.")).toBeTruthy();
+    expect(screen.getByText("You")).toBeTruthy();
+  });
   it("shows an Open Safe save error even when discovery also failed", () => {
     render(<SafeStep lookupFailed error="Could not save this Safe." found={[{
       address: A, threshold: 1, ownerCount: 1, chainIds: [8453],
@@ -183,7 +219,7 @@ describe("SafeStep", () => {
     ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
     expect(screen.queryByRole("button", { name: /Open Safe/ })).toBeNull();
     expect(screen.queryByText("Holiday saved")).toBeNull();
-    expect(screen.getByText("Holiday setup")).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
   });
   it("shows the r21 errors in Add by address", () => {
@@ -294,7 +330,7 @@ describe("SafeStep", () => {
     const status = progress[0];
     expect(tile.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
-  it("flows recovery and regular Safes through the same grid while keeping named lists", () => {
+  it("flows recovery and regular Safes through one stable list", () => {
     const recovery = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0003";
     render(<SafeStep found={[{
       address: A, name: "Regular Safe", threshold: 1, ownerCount: 1, chainIds: [8453],
@@ -302,17 +338,13 @@ describe("SafeStep", () => {
       address: recovery, name: "Recovery Safe", pendingSetup: true,
       chainIds: [8453], pendingChainIds: [8453],
     }]} existing={[]} onPick={() => {}} onAdd={() => {}} onResume={() => {}} />);
-    const recoveryList = screen.getByRole("list", { name: "Finish setting up" });
-    const regularList = screen.getByRole("list", { name: "Your Safes" });
-    expect(recoveryList.parentElement).toBe(regularList.parentElement);
-    expect(recoveryList.className).toMatch(/contents/);
-    expect(regularList.className).toMatch(/contents/);
-    expect(within(recoveryList).getAllByRole("listitem")).toHaveLength(1);
-    expect(within(regularList).getAllByRole("listitem")).toHaveLength(1);
-    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(
+    const list = screen.getByRole("list", { name: "Your Safes" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.queryByRole("list", { name: "Finish setting up" })).toBeNull();
+    expect(within(list).getAllByRole("listitem").map((item) => item.textContent)).toEqual(
       expect.arrayContaining([expect.stringContaining("Recovery Safe"), expect.stringContaining("Regular Safe")]),
     );
-    expect(screen.getAllByRole("listitem")[0].textContent).toContain("Recovery Safe");
+    expect(within(list).getByRole("button", { name: "Finish setting up" })).toBeTruthy();
   });
   it("a failed lookup offers Retry and keeps already-saved Safes pickable", () => {
     const retry = vi.fn();

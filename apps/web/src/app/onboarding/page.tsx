@@ -27,15 +27,10 @@ function Onboarding() {
   const [creating, setCreating] = useState(false);
   const [createStep, setCreateStep] = useState(0);
   const [resume, setResume] = useState<{ address: string; name?: string; chainIds: number[] } | null>(null);
-  const [savedSnapshotWallet, setSavedSnapshotWallet] = useState<string | null>(null);
-  const walletKey = session?.address.toLowerCase();
   const nicknameNames = useSafeNicknameNames(session?.address, [...(mine.data ?? []).map((s) => s.address), ...(owned.data ?? []).map((s) => s.address)]);
   useEffect(() => {
     if (!loading && !session) router.replace("/");
   }, [loading, session, router]);
-  useEffect(() => {
-    if (walletKey && mine.data !== undefined) setSavedSnapshotWallet(walletKey);
-  }, [walletKey, mine.data]);
 
   const bar = onboardingBar({ screen: "safe", path: creating ? "create" : "found", createStep });
   // The session check and the picker share the wide shell and header, so first paint already
@@ -49,7 +44,6 @@ function Onboarding() {
     );
   }
   const mineList = mine.data ?? [];
-  const savedClassified = mine.data !== undefined || (!!walletKey && savedSnapshotWallet === walletKey);
   const accountMismatch = [owned.error, mine.error].some((error) => [401, 403, 409].includes((error as { status?: number } | null)?.status ?? 0));
   const names = new Map(mineList.map((s) => [s.address.toLowerCase(), s.name]));
   const displayName = (address: string, fallback?: string) => nicknameNames[address.toLowerCase()] ?? fallback;
@@ -103,12 +97,15 @@ function Onboarding() {
         lookupFailed={!!owned.error && !owned.isFetching}
         savedLoading={mine.isLoading || mine.isFetching || mine.isPending}
         savedLookupFailed={!!mine.error && !mine.isFetching}
-        savedClassified={savedClassified}
         savedFresh={mine.data !== undefined && !mine.error}
         accountMismatch={accountMismatch}
         freshnessByChainId={owned.freshnessByChainId}
         staleAddresses={owned.staleAddresses}
         pendingAddresses={owned.pendingAddresses}
+        ownershipPendingByChainId={owned.ownershipPendingByChainId}
+        ownershipStaleByChainId={owned.ownershipStaleByChainId}
+        balancePendingAddresses={owned.balancePendingAddresses}
+        balanceStaleByChainId={owned.balanceStaleByChainId}
         createDisabled={mine.isLoading || mine.isFetching || mine.isPending || !!mine.error || (owned.incomplete && !owned.error) || accountMismatch}
         existing={mineList.map((s) => s.address)}
         busy={add.isPending || mine.isLoading}

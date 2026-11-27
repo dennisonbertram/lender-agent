@@ -120,6 +120,26 @@ describe("useOwnedSafes progressive discovery", () => {
     expect(counts).toEqual({ base: 1, arb: 2 }); // the healthy network was not asked again
   });
 
+  it("keeps Base ownership fresh when Arbitrum fails for the same Safe", async () => {
+    let arbDown = false;
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      const url = String(input);
+      if (url.includes("chainId=42161") && arbDown) return Promise.resolve(Response.json({ error: "down" }, { status: 500 }));
+      const chainId = url.includes("chainId=42161") ? 42161 : 8453;
+      const row = { ...foundRow(chainId), threshold: chainId === 8453 && arbDown ? 2 : 1 };
+      return Promise.resolve(ownedOk([row]));
+    }));
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: appWrapper() });
+    await waitFor(() => expect(result.current.data?.[0]?.chainIds).toEqual([8453, 42161]), { timeout: 1000 });
+    arbDown = true;
+    await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.freshnessByChainId[42161]).toBe("stale"), { timeout: 1000 });
+    expect(result.current.freshnessByChainId[8453]).toBe("fresh");
+    expect(result.current.ownershipStaleByChainId[42161]).toContain(SAFE_A);
+    expect(result.current.ownershipStaleByChainId[8453]).not.toContain(SAFE_A);
+    expect(result.current.data?.[0].networkDetails?.find((n) => n.chainId === 8453)?.threshold).toBe(2);
+  });
+
   it("does not clear found Safes when a background refetch fails", async () => {
     let down = false;
     vi.stubGlobal("fetch", vi.fn((input) => {
@@ -203,9 +223,34 @@ describe("useOwnedSafes progressive discovery", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("prunes prior rows beyond the bounded known-address list after a partial response", async () => {
+    const rows = Array.from({ length: 65 }, (_, i) => ({ ...foundRow(8453), address: `0x${(i + 1).toString(16).padStart(40, "0")}` }));
+    let down = false;
+    let sentKnown = "";
+    vi.stubGlobal("fetch", vi.fn((input, init) => {
+      const url = String(input);
+      if (!url.includes("chainId=8453")) return Promise.resolve(ownedOk([]));
+      if (!down) return Promise.resolve(ownedOk(rows));
+      sentKnown = new Headers(init?.headers).get("x-known-safes") ?? "";
+      return Promise.resolve(Response.json({ safes: [], partial: true, indeterminateAddresses: [rows[0].address], notOwnedAddresses: [], removedAddresses: [] }));
+    }));
+    const { result } = renderHook(() => useOwnedSafes(W1), { wrapper: appWrapper() });
+    await waitFor(() => expect(result.current.data).toHaveLength(65), { timeout: 1000 });
+    down = true;
+    await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.data).toHaveLength(1), { timeout: 1000 });
+    expect(sentKnown.split(",")).toHaveLength(64);
+    expect(result.current.data?.map((safe) => safe.address.toLowerCase())).toContain(rows[0].address.toLowerCase());
+    expect(result.current.data?.map((safe) => safe.address.toLowerCase())).not.toContain(rows[64].address.toLowerCase());
+    expect(result.current.ownershipStaleByChainId[8453].map((address) => address.toLowerCase())).toEqual([rows[0].address.toLowerCase()]);
+  });
+
   it("shows a verified streamed neighbor immediately and keeps prior rows stale after a truncated response", async () => {
     const SAFE_B = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0002";
+    const SAFE_C = "0x5afE5aFE5Afe5afe5aFe5afE5afE5aFE5afe0003";
     const streamedSafe = { ...foundRow(8453), address: SAFE_B };
+    const firstVerifiedA = { address: SAFE_A, threshold: 2, ownerCount: 1, chainIds: [8453], networkDetails: [{ chainId: 8453, threshold: 2, ownerCount: 1, owners: [{ address: W1 }] }], balanceChainIds: [], owners: [{ address: W1 }] };
+    const firstVerifiedC = { ...firstVerifiedA, address: SAFE_C };
     let stream = false;
     let recovered = false;
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -236,6 +281,14 @@ describe("useOwnedSafes progressive discovery", () => {
     await waitFor(() => expect(result.current.pendingAddresses.map((a) => a.toLowerCase())).not.toContain(SAFE_B.toLowerCase()), { timeout: 1000 });
     expect(result.current.pendingAddresses.map((a) => a.toLowerCase())).toContain(SAFE_A.toLowerCase());
 
+    controller!.enqueue(encoder.encode(`${JSON.stringify({ type: "candidate", complete: false, safe: firstVerifiedA })}\n`));
+    await waitFor(() => expect(result.current.balancePendingAddresses.map((a) => a.toLowerCase())).toContain(SAFE_A.toLowerCase()), { timeout: 1000 });
+    expect(result.current.data?.find((s) => s.address.toLowerCase() === SAFE_A.toLowerCase())?.balanceUsd).toBe(100);
+    expect(result.current.ownershipPendingByChainId[8453].map((a) => a.toLowerCase())).not.toContain(SAFE_A.toLowerCase());
+    expect(result.current.data?.find((s) => s.address.toLowerCase() === SAFE_A.toLowerCase())?.networkDetails?.[0]?.threshold).toBe(2);
+    controller!.enqueue(encoder.encode(`${JSON.stringify({ type: "candidate", complete: false, safe: firstVerifiedC })}\n`));
+    await waitFor(() => expect(result.current.balancePendingAddresses.map((a) => a.toLowerCase())).toContain(SAFE_C.toLowerCase()), { timeout: 1000 });
+
     controller!.close();
     await waitFor(() => expect(result.current.error).toBeTruthy(), { timeout: 1000 });
     expect(result.current.data?.some((s) => s.address.toLowerCase() === SAFE_A.toLowerCase())).toBe(true);
@@ -243,6 +296,12 @@ describe("useOwnedSafes progressive discovery", () => {
       expect(result.current.staleAddresses.map((a) => a.toLowerCase())).toContain(SAFE_A.toLowerCase());
       expect(result.current.partial).toBe(true);
       expect(result.current.error).toBeTruthy();
+      expect(result.current.pendingAddresses).toEqual([]);
+      expect(result.current.balancePendingAddresses).toEqual([]);
+      expect(result.current.ownershipStaleByChainId[8453].map((a) => a.toLowerCase())).not.toContain(SAFE_A.toLowerCase());
+      expect(result.current.balanceStaleByChainId[8453].map((a) => a.toLowerCase())).toContain(SAFE_A.toLowerCase());
+      expect(result.current.balanceStaleByChainId[8453].map((a) => a.toLowerCase())).not.toContain(SAFE_C.toLowerCase());
+      expect(result.current.data?.some((s) => s.address.toLowerCase() === SAFE_C.toLowerCase())).toBe(true);
     }, { timeout: 1000 });
 
     stream = false;

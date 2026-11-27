@@ -75,9 +75,11 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     render(<OnboardingPage />);
     expect(screen.getAllByText("Holiday")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Address and signers on Base" }));
     expect(screen.getByText("Approvals on Base: Only you approve transactions.")).toBeTruthy();
     expect(screen.getByText("Verified ownership on").parentElement?.textContent?.replace(/\s+/g, " ").trim()).toBe("Verified ownership on Base and Arbitrum");
-    expect(screen.getByText("Supported balance $4,500 found on Base. Other balances are unavailable.")).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem").textContent).toContain("$4,500");
+    expect(screen.getByText("Supported balance")).toBeTruthy();
     expect(screen.getByText(/done on Base/)).toBeTruthy();
     expect(screen.getByText(/finish on Gnosis/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: `Open Safe Holiday ${shortAddress(SAFE_A)}` }));
@@ -217,26 +219,35 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
-  it("keeps live-only rows hidden through a first saved-list failure and retry until a snapshot arrives", () => {
+  it("keeps a verified live tile mounted and focused through first saved-list failure, retry, and recovery classification", () => {
     mineData = undefined;
     mineError = new Error("saved list unavailable");
     ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
     const { rerender } = render(<OnboardingPage />);
     expect(screen.getByText(/We could not load your saved Safes/)).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Your Safes" })?.querySelector("li")).toBeUndefined();
+    const list = screen.getByRole("list", { name: "Your Safes" });
+    const tile = within(list).getByRole("listitem");
+    const details = within(tile).getByRole("button", { name: "Address and approvals" });
+    fireEvent.click(details);
+    details.focus();
     expect(screen.getByRole("button", { name: "Add by address" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     mineError = null;
     mineFetching = true;
     rerender(<OnboardingPage />);
-    expect(screen.queryByRole("list", { name: "Your Safes" })?.querySelector("li")).toBeUndefined();
+    expect(within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem")).toBe(tile);
+    expect(document.activeElement).toBe(details);
     expect(screen.getByText(/Checking your saved Safes/)).toBeTruthy();
 
     mineFetching = false;
-    mineData = [];
+    mineData = [pendingSafe];
     rerender(<OnboardingPage />);
-    expect(within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem")).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "Your Safes" })).getByRole("listitem")).toBe(tile);
+    expect(within(tile).getByRole("button", { name: "Finish setting up" })).toBeTruthy();
+    expect(within(tile).getByRole("button", { name: "Address and approvals" })).toBe(details);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(details);
   });
 
   it("preserves a live tile disclosure and focus during a saved-list refetch after classification", () => {
