@@ -664,17 +664,23 @@ export function GuideIntro({ topicId, compact = false }: { topicId?: string; com
     <aside
       role="note"
       aria-label={`${topic.title} — guide`}
-      className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
+      className="flex min-w-0 flex-col gap-2 border-l-2 border-link bg-muted/40 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
       onKeyDown={(e) => {
         if (e.key === "Escape") guide.dismissIntros();
       }}
     >
-      <div className="flex items-start gap-3">
-        <CircleHelp className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <p className="text-sm font-medium">{topic.title}</p>
-          <p className="text-sm text-muted-foreground">{topic.summary}</p>
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        <CircleHelp className="mt-0.5 size-4 shrink-0 text-link" aria-hidden />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-link">Quick guide</p>
+          <p className="text-sm font-medium leading-tight">{topic.title}</p>
+          <p className="text-xs leading-snug text-muted-foreground">{topic.summary}</p>
         </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 pl-6 sm:pl-0">
+        <Button size="sm" variant="outline" onClick={(e) => guide.open(id, e.currentTarget)}>
+          Walk through the steps
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -683,11 +689,6 @@ export function GuideIntro({ topicId, compact = false }: { topicId?: string; com
           onClick={guide.dismissIntros}
         >
           <X />
-        </Button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={(e) => guide.open(id, e.currentTarget)}>
-          Walk through the steps
         </Button>
       </div>
     </aside>

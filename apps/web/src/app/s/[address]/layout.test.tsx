@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/client/safes";
@@ -19,15 +20,25 @@ vi.mock("@/components/shell/ShellContext", () => ({ ShellProvider: (p: unknown) 
 import { signInHref } from "@/lib/return-to";
 import SafeLayout from "./layout";
 
-function render(error: unknown) {
+function render(error: unknown, children: ReactNode = null) {
   if (error) state.data = undefined;
   state.error = error;
   // A pre-resolved thenable lets React's `use` read params synchronously.
   const params = Object.assign(Promise.resolve({ address: "0xabc" }), { status: "fulfilled", value: { address: "0xabc" } });
-  return renderToStaticMarkup(<SafeLayout params={params}>{null}</SafeLayout>);
+  return renderToStaticMarkup(<SafeLayout params={params}>{children}</SafeLayout>);
 }
 
 describe("Safe layout error states", () => {
+  it("reserves the desktop rail while showing a compact authorized-control loading frame", () => {
+    state.error = null;
+    state.data = undefined;
+    const html = render(null, <p>secret page content</p>);
+    expect(html).toContain('class="hidden w-[232px]');
+    expect(html).toContain("Pick another Safe");
+    expect(html).toContain("Sign out");
+    expect(html).not.toContain("secret page content");
+  });
+
   it("401: asks to sign in, with a link to /", () => {
     const html = render(new ApiError(401, "unauthorized"));
     expect(html).toContain("Sign in to continue");

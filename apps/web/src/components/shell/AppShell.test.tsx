@@ -65,6 +65,13 @@ describe("AppShell", () => {
     expect(screen.queryByText("chat panel")).toBeNull();
     expect(screen.getByRole("link", { name: /Ask the agent/ }).getAttribute("aria-current")).toBe("page");
   });
+  it("keeps the ownership notice and chat page in a bounded flex column", () => {
+    pathname = "/s/0xabc/chat";
+    mockMedia(() => true);
+    render(<ShellProvider safe={safe} safes={[safe]} loans={[]} agentOn watching><AppShell chat={<p>panel</p>}><p role="status">Owners differ</p><div>chat page</div></AppShell></ShellProvider>);
+    expect(screen.getByRole("status").parentElement?.className).toMatch(/flex[^\"]*min-h-0[^\"]*flex-col/);
+    expect(screen.getByText("chat page")).toBeTruthy();
+  });
 
   it("offers a Skip to content link that targets the main content", () => {
     mockMedia(() => true);
@@ -111,8 +118,8 @@ describe("AppShell", () => {
   it("fixes the shell to the viewport and lets the sidebar scroll itself", () => {
     mockMedia(() => true);
     const { container } = render(shell([loan]));
-    // main's layout: the shell fills the page (h-full, overflow-hidden) instead of #106's h-dvh + sticky aside.
-    expect((container.firstElementChild as HTMLElement).className).toMatch(/h-full[^"]*overflow-hidden/);
+    // The shell has its own viewport height, independent of ancestors' percentage heights.
+    expect((container.firstElementChild as HTMLElement).className).toMatch(/h-dvh[^"]*overflow-hidden/);
     const aside = container.querySelector("aside") as HTMLElement;
     expect(aside.querySelector("[data-sidebar]")!.className).toContain("overflow-y-auto");
   });

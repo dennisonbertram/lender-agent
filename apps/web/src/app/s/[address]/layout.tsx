@@ -60,9 +60,19 @@ export default function SafeLayout({ children, params }: { children: ReactNode; 
     );
   }
   if (!summary.data) return (
-    <div className="flex min-h-full flex-col">
-      <MinimalTopBar address={address} onSignOut={() => void signOut()} />
-      <main className="flex flex-1 items-center justify-center p-4"><StateMessage kind="loading" label="Loading this Safe…" /></main>
+    <div className="flex min-h-full flex-col md:flex-row">
+      <aside aria-hidden="true" className="hidden w-[232px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col md:gap-6 md:p-4">
+        <div className="h-9 w-40 animate-pulse rounded-md bg-muted/70" />
+        <div className="flex flex-col gap-3">
+          <div className="h-9 w-full animate-pulse rounded-md bg-muted/50" />
+          <div className="h-9 w-4/5 animate-pulse rounded-md bg-muted/50" />
+          <div className="h-9 w-11/12 animate-pulse rounded-md bg-muted/50" />
+        </div>
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MinimalTopBar address={address} onSignOut={() => void signOut()} />
+        <main className="flex min-h-0 flex-1 items-center justify-center p-4"><StateMessage kind="loading" label="Loading this Safe…" /></main>
+      </div>
     </div>
   );
   const { safe, ownersDiffer, watching, ownedChainIds } = summary.data;

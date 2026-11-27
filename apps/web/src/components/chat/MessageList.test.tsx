@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,7 +112,7 @@ describe("MessageList alert card (E4 #6)", () => {
 });
 
 describe("MessageList follow-the-bottom", () => {
-  afterEach(cleanup);
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
   const msg = (id: string, role: "user" | "assistant" = "assistant"): UIMessage => ({ id, role, parts: [{ type: "text", text: `text ${id}` }] }) as UIMessage;
   const qc = new QueryClient();
   const list = (ms: UIMessage[]) => <QueryClientProvider client={qc}><MessageList messages={ms} safeAddress="0xabc" onSend={() => {}} /></QueryClientProvider>;
@@ -120,38 +120,91 @@ describe("MessageList follow-the-bottom", () => {
     const log = screen.getByRole("log");
     Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1000 });
     Object.defineProperty(log, "clientHeight", { configurable: true, value: 400 });
-    Object.defineProperty(log, "scrollTop", { configurable: true, value: up ? 100 : 600 });
+    Object.defineProperty(log, "scrollTop", { configurable: true, writable: true, value: up ? 100 : 600 });
     fireEvent.scroll(log);
   };
-  let scroll: ReturnType<typeof vi.fn<() => void>>;
-  beforeEach(() => { scroll = vi.fn<() => void>(); Element.prototype.scrollIntoView = scroll; });
-
+  let resize: (() => void) | undefined;
+  beforeEach(() => {
+    resize = undefined;
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { resize = callback; }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    });
+  });
   it("follows new messages while at the bottom", () => {
     const { rerender } = render(list([msg("a")]));
-    scroll.mockClear();
     scrollAway(false);
     rerender(list([msg("a"), msg("b")]));
-    expect(scroll).toHaveBeenCalled();
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
     expect(screen.queryByText(/New messages/)).toBeNull();
   });
 
   it("does not yank a scrolled-up reader; shows a button that scrolls down", () => {
     const { rerender } = render(list([msg("a")]));
     scrollAway(true);
-    scroll.mockClear();
     rerender(list([msg("a"), msg("b")]));
-    expect(scroll).not.toHaveBeenCalled();
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(100);
     fireEvent.click(screen.getByRole("button", { name: /New messages/ }));
-    expect(scroll).toHaveBeenCalled();
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
     expect(screen.queryByText(/New messages/)).toBeNull();
   });
 
   it("still scrolls down when the reader sends a message", () => {
     const { rerender } = render(list([msg("a")]));
     scrollAway(true);
-    scroll.mockClear();
     rerender(list([msg("a"), msg("u", "user")]));
-    expect(scroll).toHaveBeenCalled();
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
+  });
+
+  it("shows new incoming streamed text while preserving a reader's position", () => {
+    const { rerender } = render(list([msg("a")]));
+    scrollAway(true);
+    rerender(list([{ ...msg("a"), parts: [{ type: "text", text: "streamed continuation" }] } as UIMessage]));
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(100);
+    expect(screen.getByRole("button", { name: /New messages/ })).toBeTruthy();
+  });
+
+  it("follows content growth in the last message while the reader is at the bottom", () => {
+    render(list([msg("a")]));
+    const content = screen.getByRole("log").firstElementChild as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 500 });
+    act(() => resize?.());
+    scrollAway(false);
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 700 });
+    act(() => resize?.());
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(1000);
+  });
+
+  it("ignores passive layout growth while the reader is above the bottom", () => {
+    render(list([msg("a")]));
+    const content = screen.getByRole("log").firstElementChild as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 500 });
+    act(() => resize?.());
+    scrollAway(true);
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 700 });
+    act(() => resize?.());
+    expect((screen.getByRole("log") as HTMLElement).scrollTop).toBe(100);
+    expect(screen.queryByRole("button", { name: /New messages/ })).toBeNull();
+  });
+
+  it("does not snap to the bottom when the reader opens an add-funds disclosure", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ address: "0xabc", networks: ["base"], assets: ["ETH"], text: "Send ETH to this Safe." })));
+    const addFunds = { id: "funds", role: "assistant", parts: [{ type: "data-block", data: { block: { kind: "addfunds" } } }] } as UIMessage;
+    render(list([msg("old"), addFunds]));
+    const summary = await screen.findByText("Add funds to this Safe");
+    const log = screen.getByRole("log");
+    const content = log.firstElementChild as HTMLElement;
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 500 });
+    act(() => resize?.());
+    scrollAway(false);
+    fireEvent.click(summary); // Close, then reopen the historical disclosure.
+    fireEvent.click(summary);
+    Object.defineProperty(content, "scrollHeight", { configurable: true, value: 700 });
+    act(() => resize?.());
+    expect((log as HTMLElement).scrollTop).toBe(600);
+    expect(screen.queryByRole("button", { name: /New messages/ })).toBeNull();
   });
 });
 

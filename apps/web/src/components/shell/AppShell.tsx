@@ -76,7 +76,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
 
   return (
     <TxToastProvider>
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-dvh flex-col overflow-hidden">
     {chainId !== undefined && isChainId(chainId) && TESTNET_IDS.has(chainId) && (
       <p role="note" className="flex shrink-0 items-center justify-center gap-1.5 border-b border-warning-text/30 bg-warning/15 px-3 py-1 text-xs text-warning-text"><NetworkMark id={chainId} />Test network: {CHAIN_NAME[chainId]}</p>
     )}
@@ -84,7 +84,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
       <a href="#main-content" className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-2 focus-visible:top-2 focus-visible:z-50 focus-visible:rounded-md focus-visible:bg-background focus-visible:px-3 focus-visible:py-2 focus-visible:text-sm focus-visible:ring-2 focus-visible:ring-ring">Skip to content</a>
       {showSidebar && <aside className="w-[232px] shrink-0 border-r border-sidebar-border"><Sidebar safe={safe} safes={safes} statusesBySafe={statusesBySafe} chainId={chainId} loans={loans} loansError={loansError} pathname={pathname} onNavigate={go} userLabel={userLabel} userAddress={userAddress} reserve={reserve} ownedChainIds={ownedChainIds} onSignOut={onSignOut} /></aside>}
 
-      <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col focus:outline-none">
+      <main id="main-content" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col focus:outline-none">
         {(!showSidebar || (hasChat && !docked && !onChat)) && (
         <header className="flex items-center gap-2 border-b border-border p-2 pl-3">
           {!showSidebar && (
@@ -103,7 +103,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
           )}
         </header>
         )}
-        {onChat ? <div className="min-h-0 flex-1">{children}</div> : (
+        {onChat ? <div className="flex min-h-0 flex-1 flex-col">{children}</div> : (
         <div ref={scrollRef} className="rk-scroll min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-5xl">{children}</div>
         </div>
@@ -111,7 +111,7 @@ export function AppShell({ children, chat, userLabel, userAddress, ownedChainIds
       </main>
 
       {docked && (
-        <aside className="w-[440px] min-[1440px]:w-[520px] shrink-0 border-l border-border">{renderChat(() => setChatDocked(false))}</aside>
+        <aside className="flex min-h-0 w-[440px] min-[1440px]:w-[520px] shrink-0 flex-col border-l border-border">{renderChat(() => setChatDocked(false))}</aside>
       )}
 
       {!showSidebar && (

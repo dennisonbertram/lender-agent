@@ -64,3 +64,49 @@ test("sidebar stays put (the page itself never scrolls), and scrolls itself in s
   const scrolls = await side.evaluate((el) => el.scrollHeight > el.clientHeight && getComputedStyle(el).overflowY === "auto");
   expect(scrolls).toBe(true);
 });
+
+test("long chat follows a late reply and keeps the shell, heading, and composer on screen while reading back", async ({ page }) => {
+  await useWallet(page, "owner");
+  await setupChat(page);
+
+  const history = Array.from({ length: 24 }, (_, i) => ({
+    id: `borrower-${i}`,
+    role: i % 2 ? "assistant" : "user",
+    parts: [{ type: "text", text: `Earlier conversation message ${i + 1}. ${"The borrower and lender reviewed the loan details. ".repeat(4)}` }],
+  }));
+  let replyAvailable = false;
+  await page.route(`**/api/safes/${MOCK_SAFE}/chat`, async (route) => {
+    const messages = replyAvailable
+      ? [...history, { id: "latest-agent-reply", role: "assistant", parts: [{ type: "text", text: "The latest reply arrived after the borrower opened the conversation." }] }]
+      : history;
+    await route.fulfill({ json: { messages } });
+  });
+  await page.reload();
+
+  const log = page.getByRole("log", { name: "Conversation with Lender agent" });
+  const composer = page.getByRole("main").getByRole("textbox", { name: "Message" });
+  const nav = page.locator("[data-sidebar]").getByRole("link", { name: /Overview/ });
+  const heading = page.getByRole("main").getByRole("heading", { name: "Lender agent" });
+  await expect(log.getByText("Earlier conversation message 24.")).toBeVisible();
+  await expect(composer).toBeInViewport();
+
+  replyAvailable = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(log.getByText("The latest reply arrived after the borrower opened the conversation.")).toBeVisible();
+  await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThanOrEqual(2);
+
+  await log.evaluate((el) => { el.scrollTop = 0; });
+  await expect(log.getByText("Earlier conversation message 1.")).toBeVisible();
+  await expect(nav).toBeInViewport();
+  await expect(heading).toBeInViewport();
+  await expect(composer).toBeInViewport();
+
+  const geometry = await page.evaluate(() => ({
+    documentScrollHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight,
+    windowScrollY: window.scrollY,
+  }));
+  expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight);
+  expect(geometry.windowScrollY).toBe(0);
+  await expect(log).toHaveJSProperty("scrollTop", 0);
+});

@@ -112,11 +112,14 @@ export function ChatBody({ address, placeholder, placement, contextualHelpOnly }
   const thread = useQuery({ queryKey: ["chat", address.toLowerCase()], queryFn: () => fetchThread(address), staleTime: Infinity, gcTime: 0, retry: false });
   if (thread.isPending) {
     return (
-      <div role="status" aria-label="Loading the conversation" className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-        <div className="h-4 w-4/5 animate-pulse rounded bg-muted" />
-        <div className="h-4 w-3/5 animate-pulse rounded bg-muted" />
-        <div className="h-8 w-2/5 animate-pulse rounded-full bg-muted" />
-      </div>
+      <>
+        <div role="status" aria-label="Loading the conversation" className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden p-3">
+          <div className="h-4 w-4/5 shrink-0 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-3/5 shrink-0 animate-pulse rounded bg-muted" />
+          <div className="h-8 w-2/5 shrink-0 animate-pulse rounded-full bg-muted" />
+        </div>
+        {agentOn && <div className="shrink-0 border-t border-border bg-background p-3"><Composer placeholder={placeholder} disabled lockInput onSend={() => {}} /></div>}
+      </>
     );
   }
   if (thread.isError) {
@@ -124,6 +127,7 @@ export function ChatBody({ address, placeholder, placement, contextualHelpOnly }
     return (
       <>
         <div className="flex min-h-0 flex-1 items-center justify-center p-3"><div className="flex flex-col items-center gap-2 text-center"><p role="alert" className="text-sm text-muted-foreground">{forbidden ? "You need to be an owner of this Safe on every network to chat." : "We could not load the conversation."}</p>{!forbidden && <Button size="sm" variant="outline" onClick={() => void thread.refetch()}>Try again</Button>}</div></div>
+        {!forbidden && agentOn && <div className="shrink-0 border-t border-border bg-background p-3"><Composer placeholder={placeholder} disabled lockInput onSend={() => {}} /></div>}
         {!agentOn && <AgentOffNotice safeAddress={address} />}
       </>
     );

@@ -107,6 +107,16 @@ describe("Guide", () => {
     expect(document.activeElement).toBe(keep);
   });
 
+  it("labels the chat intro as a compact guide and keeps the walkthrough available", () => {
+    pathname = "/s/0xabc/chat";
+    render(page(<GuideIntro />));
+    const note = screen.getByRole("note", { name: "Chat — guide" });
+    expect(screen.getByText("Quick guide")).toBeTruthy();
+    expect(note.textContent).toContain("Ask the agent.");
+    fireEvent.click(screen.getByRole("button", { name: "Walk through the steps" }));
+    expect(screen.getByText("Ask")).toBeTruthy();
+  });
+
   it("keeps the compact intro inline without repeating the topic title, and still opens the right walkthrough", () => {
     pathname = "/onboarding";
     render(page(<GuideIntro topicId="choose-safe" compact />));
