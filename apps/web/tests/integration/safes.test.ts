@@ -28,6 +28,22 @@ describe("safes", () => {
     expect((await (await ownedSafes(world.req("/api/safes/owned", { cookie: none.cookie }))).json()).safes).toEqual([]);
   });
 
+  it("answers one served network at a time for progressive pickers, and rejects unserved ones", async () => {
+    const { cookie } = await world.signIn(MOCK_OWNER);
+    const base = await (await ownedSafes(world.req("/api/safes/owned?chainId=8453", { cookie }))).json();
+    expect(base.safes).toHaveLength(2);
+    expect(base.safes.map((s: { chainIds: number[] }) => s.chainIds)).toEqual([[8453], [8453]]);
+    for (const s of base.safes) {
+      expect(s.networkDetails).toHaveLength(1);
+      expect(s.networkDetails[0].chainId).toBe(8453);
+    }
+    const arb = await (await ownedSafes(world.req("/api/safes/owned?chainId=42161", { cookie }))).json();
+    expect(arb.safes).toEqual([]);
+    expect((await ownedSafes(world.req("/api/safes/owned?chainId=10", { cookie }))).status).toBe(400);
+    expect((await ownedSafes(world.req("/api/safes/owned?chainId=soon", { cookie }))).status).toBe(400);
+    expect((await ownedSafes(world.req("/api/safes/owned?chainId=8453"))).status).toBe(401);
+  });
+
   it("adds a Safe by address: saved with its threshold and an Activity row", async () => {
     const { cookie, userId } = await world.signIn(MOCK_OWNER);
     const res = await add(cookie, MOCK_SAFE, "Treasury");

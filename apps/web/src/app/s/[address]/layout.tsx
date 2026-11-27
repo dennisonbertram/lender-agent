@@ -7,6 +7,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { AppShell } from "@/components/shell/AppShell";
 import { WrongWallet } from "@/components/proposals/WrongWallet";
 import { MinimalTopBar } from "@/components/shell/MinimalTopBar";
+import { safePaths } from "@/components/shell/Sidebar";
 import { ShellProvider } from "@/components/shell/ShellContext";
 import { StateMessage } from "@/components/ui/state-message";
 import { describeError } from "@/lib/errors";
@@ -27,6 +28,23 @@ function PendingSafeRail() {
         <div className="h-9 w-full animate-pulse rounded-md bg-muted/50" />
         <div className="h-9 w-4/5 animate-pulse rounded-md bg-muted/50" />
         <div className="h-9 w-11/12 animate-pulse rounded-md bg-muted/50" />
+      </div>
+    </aside>
+  );
+}
+
+// The docked chat column AppShell paints at >=1100px on every page but the chat one. Reserving it
+// while the Safe loads keeps the desktop column count identical from first paint to loaded shell.
+function PendingAgentRail() {
+  return (
+    <aside aria-hidden="true" className="hidden w-[440px] min-[1440px]:w-[520px] shrink-0 flex-col border-l border-border min-[1100px]:flex">
+      <div className="flex items-center gap-3 border-b border-border p-3">
+        <div className="size-9 animate-pulse rounded-full bg-muted/70" />
+        <div className="h-4 w-24 animate-pulse rounded bg-muted/50" />
+      </div>
+      <div className="flex flex-1 flex-col justify-end gap-3 p-3">
+        <div className="h-4 w-4/5 animate-pulse rounded bg-muted" />
+        <div className="h-4 w-3/5 animate-pulse rounded bg-muted" />
       </div>
     </aside>
   );
@@ -79,9 +97,10 @@ export default function SafeLayout({ children, params }: { children: ReactNode; 
     <div className="flex min-h-full flex-col md:flex-row">
       <PendingSafeRail />
       <div className="flex min-w-0 flex-1 flex-col">
-        <MinimalTopBar address={address} onSignOut={() => void signOut()} />
+        <MinimalTopBar address={address} guide={false} onSignOut={() => void signOut()} />
         <main className="flex min-h-0 flex-1 items-center justify-center p-4"><StateMessage kind="loading" label="Loading this Safe…" /></main>
       </div>
+      {pathname.toLowerCase() !== safePaths(address).chat.toLowerCase() && <PendingAgentRail />}
     </div>
   );
   const { safe, ownersDiffer, watching, ownedChainIds } = summary.data;

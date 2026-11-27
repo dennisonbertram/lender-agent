@@ -39,6 +39,23 @@ describe("Safe layout error states", () => {
     expect(html).not.toContain("secret page content");
   });
 
+  it("reserves the agent column beside the rail on non-chat pages, so a loaded shell keeps the same columns", () => {
+    state.error = null;
+    state.data = undefined;
+    state.path = "/s/0xabc";
+    try {
+      const overview = render(null);
+      // The docked chat column the shell paints at >=1100px must exist from first paint.
+      expect(overview).toContain("min-[1100px]");
+      state.path = "/s/0xabc/chat";
+      // The chat page is itself the agent: no second column is reserved or docked there.
+      const chat = render(null);
+      expect(chat).not.toContain("min-[1100px]");
+    } finally {
+      state.path = "/s/0xabc/loans/7";
+    }
+  });
+
   it("keeps the fallback top bar at the same frame position while loading becomes an error", () => {
     state.error = null;
     state.data = undefined;

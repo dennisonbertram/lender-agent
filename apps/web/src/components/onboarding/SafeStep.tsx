@@ -5,11 +5,12 @@ import { NetworkChip } from "@/components/common";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AddressText } from "@/components/ui/address";
+import { Spinner } from "@/components/ui/spinner";
 import { shortAddress } from "@/lib/address";
 import { formatAddress } from "@/lib/explorer";
 import { usd } from "@/lib/format";
 import { approvalsSummary } from "@/lib/owners";
-import { safeNetworkName } from "@/lib/safe-create";
+import { safeNetworkName, SERVED_CHAIN_IDS } from "@/lib/safe-create";
 import { CHAIN_NAME, type ChainId } from "@/shared/types";
 import { GuideIntro } from "@/components/guide/Guide";
 import { AddSafeForm } from "./AddSafeForm";
@@ -263,81 +264,74 @@ function TileTitle({ safe }: { safe: { name?: string; address: string } }) {
   );
 }
 
-/** A compact found-Safe tile: identity, balance and verified networks up front; approval
-    policy, balance coverage, assets, address and signers behind the details disclosure. */
-function FoundTile({ safe: s, wallet, selectedChainId, busy, onPick }: {
-  safe: FoundSafeCard;
+/** One pickable row of "Your Safes", keyed by the Safe's lowercase address: `found` is the
+    live discovery record, `saved` the earlier saved-list entry. */
+type PickerRow = { key: string; address: string; name?: string; found?: FoundSafeCard; saved?: KnownSafeCard };
+
+/** A row's tile: both faces live in one component so a saved card keeps its place and its
+    disclosure state while discovery verifies it into a found one. */
+function SafeTile({ row, wallet, selectedChainId, busy, onPick }: {
+  row: PickerRow;
   wallet?: string;
   selectedChainId?: number | null;
   busy?: boolean;
   onPick: (address: string) => void;
 }) {
-  const { detailChainId, owners } = resolveDetails(s, s.chainIds, selectedChainId);
-  const { threshold, ownerCount } = resolveApprovalSnapshot(s, s.chainIds, selectedChainId);
+  const s = row.found;
+  const verified = s ? s.chainIds : row.saved?.availableChainIds ?? row.saved?.chainIds ?? [];
+  const { detailChainId, owners } = resolveDetails(s, verified, selectedChainId);
+  const { threshold, ownerCount } = resolveApprovalSnapshot(s, verified, selectedChainId);
   const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
-  const balanceChainIds = s.balanceChainIds ?? s.chainIds;
-  const balanceDetails = supportedBalanceDetails(s);
+  const balanceChainIds = s ? s.balanceChainIds ?? s.chainIds : [];
+  const balanceDetails = s ? supportedBalanceDetails(s) : "";
   const content: DetailContent = owners && owners.length > 0 ? "signers" : threshold !== undefined && ownerCount !== undefined ? "approvals" : "address";
   return (
     <li className={tileClass}>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <TileTitle safe={s} />
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-xs text-muted-foreground">Supported balance</span>{" "}
-          {s.balanceUsd === undefined ? (
-            <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
-          ) : (
-            <span className="text-lg font-semibold tabular-nums">{supportedBalanceAmount(s.balanceUsd)}</span>
-          )}
-        </div>
-        {s.balanceUsd !== undefined && balanceDetails && <span className={cn("-mt-1 text-xs", balanceDetails === "No supported funds found." ? "text-warning-text" : "text-muted-foreground")}>
-          {" "}{balanceDetails}
-        </span>}
-        <VerifiedNetworks ids={s.chainIds} />
+        <TileTitle safe={row} />
+        {s ? (
+          <>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="text-xs text-muted-foreground">Supported balance</span>{" "}
+              {s.balanceUsd === undefined ? (
+                <span className="text-lg font-medium text-muted-foreground">Balance unavailable</span>
+              ) : (
+                <span className="text-lg font-semibold tabular-nums">{supportedBalanceAmount(s.balanceUsd)}</span>
+              )}
+            </div>
+            {s.balanceUsd !== undefined && balanceDetails && <span className={cn("-mt-1 text-xs", balanceDetails === "No supported funds found." ? "text-warning-text" : "text-muted-foreground")}>
+              {" "}{balanceDetails}
+            </span>}
+          </>
+        ) : (
+          <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
+        )}
+        <VerifiedNetworks ids={verified} />
       </div>
       <TileActions
-        action={<Button size="sm" aria-label={openSafeLabel(s)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(s.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
-        label={detailsToggleLabel(content, name, s.chainIds, selectedChainId)}
+        action={<Button size="sm" aria-label={openSafeLabel(row)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(row.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
+        label={detailsToggleLabel(content, name, verified, selectedChainId)}
       >
-        <span>{approvalLabel(s, s.chainIds, selectedChainId)}</span>
-        {s.assets && s.assets.length > 0 && <span>{balanceChainIds.length > 0
+        <span>{approvalLabel(s, verified, selectedChainId)}</span>
+        {s?.assets && s.assets.length > 0 && <span>{balanceChainIds.length > 0
           ? `Tokens ${balanceChainIds.length === 1 ? "on" : "across"} ${balanceChainIds.map(chainChipId).join(" and ")}`
           : "Tokens (source networks unreported)"}: {s.assets.map((a) => `${amountText(a.amount)} ${a.symbol}`).join(" · ")}</span>}
-        <AddressText address={s.address} chainId={detailChainId} />
+        <AddressText address={row.address} chainId={detailChainId} />
         {owners && owners.length > 0 && <Signers owners={owners} wallet={wallet} chainId={detailChainId} />}
       </TileActions>
     </li>
   );
 }
 
-/** A compact saved-Safe tile: it re-verifies on open, so nothing beyond identity, the saved
-    note and networks sits up front. */
-function SavedTile({ safe: k, wallet, selectedChainId, busy, onPick }: {
-  safe: KnownSafeCard;
-  wallet?: string;
-  selectedChainId?: number | null;
-  busy?: boolean;
-  onPick: (address: string) => void;
-}) {
-  const verified = k.availableChainIds ?? k.chainIds ?? [];
-  const { detailChainId } = resolveDetails(undefined, verified, selectedChainId);
-  const name = detailChainId === undefined ? undefined : chainChipId(detailChainId);
-  return (
-    <li className={tileClass}>
-      <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <TileTitle safe={k} />
-        <span className="text-xs text-muted-foreground">Saved — your wallet is checked again when you open it.</span>
-        <VerifiedNetworks ids={verified} />
-      </div>
-      <TileActions
-        action={<Button size="sm" aria-label={openSafeLabel(k)} data-guide-target={busy ? undefined : "choose-safe"} disabled={busy} onClick={() => onPick(k.address)}>Open Safe <ArrowRight data-icon="inline-end" aria-hidden /></Button>}
-        label={detailsToggleLabel("address", name, verified, selectedChainId)}
-      >
-        <span>{approvalLabel(undefined, verified, selectedChainId)}</span>
-        <AddressText address={k.address} chainId={detailChainId} />
-      </TileActions>
-    </li>
-  );
+/** The order "Your Safes" rows were first shown in: a card already on screen never moves
+    while more of the wallet's Safes arrive or a saved card verifies into a found one. */
+function useShownOrder(keys: string[]): string[] {
+  const [order, setOrder] = useState(keys);
+  const additions = keys.filter((key) => !order.includes(key));
+  if (additions.length === 0) return order;
+  const next = [...order, ...additions];
+  setOrder(next);
+  return next;
 }
 
 /** The Safe step of the found path (r31). */
@@ -377,27 +371,38 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
   const savedBusy = !!savedLoading;
   const savedFailed = !!savedLookupFailed;
   const empty = none && !lookupFailed && !savedBusy && !savedFailed && (known?.length ?? 0) === 0;
-  // Funded Safes first; the rest keep their order.
+  // Funded Safes first; the rest keep their order. This ranks a batch when it first shows —
+  // once a card is on screen it keeps its place instead of re-sorting under the user.
   const sorted = [...found].sort((x, y) => Number((y.balanceUsd ?? 0) > 0) - Number((x.balanceUsd ?? 0) > 0));
   const networks = [...new Set([
+    ...SERVED_CHAIN_IDS,
     ...found.flatMap((safe) => safe.chainIds),
     ...(known ?? []).flatMap((safe) => safe.pendingSetup ? safe.availableChainIds ?? [] : safe.chainIds ?? []),
   ])];
   const pendingAddresses = new Set((known ?? []).filter((safe) => safe.pendingSetup).map((safe) => safe.address.toLowerCase()));
-  const visibleFound = sorted.filter((safe) => !pendingAddresses.has(safe.address.toLowerCase()) && (networkFilter === null || safe.chainIds.includes(networkFilter)));
   const foundAddresses = new Set(found.map((safe) => safe.address.toLowerCase()));
-  const visibleKnown = (known ?? []).filter((safe) => safe.pendingSetup || !foundAddresses.has(safe.address.toLowerCase()))
-    .filter((safe) => safe.pendingSetup || networkFilter === null || !!safe.chainIds?.includes(networkFilter));
+  const foundRows: PickerRow[] = sorted.filter((safe) => !pendingAddresses.has(safe.address.toLowerCase()))
+    .map((safe) => ({ key: safe.address.toLowerCase(), address: safe.address, name: safe.name, found: safe }));
+  const shownKnown = (known ?? []).filter((safe) => safe.pendingSetup || !foundAddresses.has(safe.address.toLowerCase()));
+  const pendingKnown = shownKnown.filter((safe) => safe.pendingSetup);
+  const savedRows: PickerRow[] = shownKnown.filter((safe) => !safe.pendingSetup)
+    .map((safe) => ({ key: safe.address.toLowerCase(), address: safe.address, name: safe.name, saved: safe }));
+  const rowsByKey = new Map([...foundRows, ...savedRows].map((row) => [row.key, row]));
+  // Lowercase address keys: a saved card that discovery later verifies keeps the same key,
+  // and cards keep their first-shown order while later batches arrive.
+  const rows = useShownOrder([...foundRows, ...savedRows].map((row) => row.key))
+    .map((key) => rowsByKey.get(key)).filter((row): row is PickerRow => !!row);
+  const visibleRows = networkFilter === null ? rows
+    : rows.filter((row) => (row.found ? row.found.chainIds : row.saved?.chainIds ?? []).includes(networkFilter));
+  const visibleFound = visibleRows.filter((row) => row.found);
   const hasUnknownNetwork = sorted.some((safe) => safe.chainIds.length === 0)
     || (known ?? []).some((safe) => !safe.pendingSetup && !safe.chainIds?.length && !foundAddresses.has(safe.address.toLowerCase()));
-  const pendingKnown = visibleKnown.filter((safe) => safe.pendingSetup);
-  const savedKnown = visibleKnown.filter((safe) => !safe.pendingSetup);
   const hasPendingSetup = pendingKnown.length > 0;
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
         <h1 tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none sm:text-3xl">{hasPendingSetup ? "Finish setting up your Safe" : visibleFound.length > 0 ? "Choose a Safe" : "Your Safe"}</h1>
-        {!adding && (networks.length > 1 || networkFilter !== null) && <fieldset className="flex min-w-0 flex-col gap-2">
+        {!adding && <fieldset className="flex min-w-0 flex-col gap-2">
           <legend className="text-xs font-medium text-muted-foreground">Show Safes on</legend>
           <div className="flex flex-wrap gap-2">
             <button type="button" aria-pressed={networkFilter === null} className={cn("inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", networkFilter === null ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-background/40 text-muted-foreground hover:border-foreground/20 hover:bg-muted hover:text-foreground")} onClick={() => setNetworkFilter(null)}><NetworkChip id="All networks" className="rounded-none border-0 px-0 py-0 text-current" /></button>
@@ -412,26 +417,12 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
           Is this the wallet you use for your Safe? If not, use another wallet. You can also create a new Safe or add one you own by its address.
         </p>
       )}
-      {lookupFailed && !adding && (
-        <div className="flex w-full max-w-md flex-col gap-2">
-          <p className="text-sm">We could not look up your Safes. Try again, or use one you saved before.</p>
-          {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
-        </div>
-      )}
-      {savedBusy && !adding && <p role="status" className="text-xs text-muted-foreground">Checking your saved Safes…</p>}
-      {savedFailed && !adding && !lookupFailed && (
-        <div className="flex w-full max-w-md flex-col gap-2">
-          <p className="text-sm">We could not load your saved Safes. Retry to check for a setup you can continue.</p>
-          {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
-        </div>
-      )}
-      {loading && <p className="text-xs text-muted-foreground">Looking for your Safes…</p>}
       {!adding && (
         <>
-        {networkFilter !== null && visibleFound.length === 0 && visibleKnown.length === 0 && <p className="text-sm">{hasUnknownNetwork
+        {networkFilter !== null && visibleRows.length === 0 && pendingKnown.length === 0 && !loading && !savedBusy && !lookupFailed && !savedFailed && <p className="text-sm">{hasUnknownNetwork
           ? <>No Safes with reported network information found on {chainChipId(networkFilter)}. Choose All networks to review Safes whose network is unavailable.</>
           : <>No Safes found on {chainChipId(networkFilter)}.</>}</p>}
-        {(pendingKnown.length > 0 || visibleFound.length > 0 || savedKnown.length > 0) && (
+        {(pendingKnown.length > 0 || visibleRows.length > 0) && (
         <div className={gridClass}>
         {pendingKnown.length > 0 && (
         <ul role="list" aria-label="Finish setting up" className="contents">
@@ -461,19 +452,29 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
           ))}
         </ul>
         )}
-        {(visibleFound.length > 0 || savedKnown.length > 0) && (
+        {visibleRows.length > 0 && (
         <ul role="list" aria-label="Your Safes" className="contents">
-          {visibleFound.map((s) => (
-            <FoundTile key={s.address} safe={s} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
-          ))}
-          {savedKnown.map((k) => (
-            <SavedTile key={k.address} safe={k} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
+          {visibleRows.map((row) => (
+            <SafeTile key={row.key} row={row} wallet={wallet} selectedChainId={networkFilter} busy={busy} onPick={onPick} />
           ))}
         </ul>
         )}
         </div>
         )}
         </>
+      )}
+      {!adding && (savedBusy || loading) && <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Spinner /> {savedBusy && loading ? "Checking your saved Safes and looking for your Safes…" : savedBusy ? "Checking your saved Safes…" : "Looking for your Safes…"}</p>}
+      {!adding && (lookupFailed || savedFailed) && (
+        <div className="flex w-full max-w-md flex-col gap-2">
+          <p className="text-sm">{lookupFailed && savedFailed
+            ? "We could not look up your Safes or load your saved Safes. Try again."
+            : lookupFailed
+              ? found.length > 0
+                ? "We could not finish looking up your Safes. Some Safes may be missing. Try again, or use one you saved before."
+                : "We could not look up your Safes. Try again, or use one you saved before."
+              : "We could not load your saved Safes. Retry to check for a setup you can continue."}</p>
+          {onRetry && <Button size="lg" variant="outline" disabled={busy} onClick={onRetry}>Retry</Button>}
+        </div>
       )}
       {adding ? (
         <AddSafeForm existing={existing} busy={busy} serverError={error} onSubmit={onAdd} onCancel={() => setAdding(false)} />
@@ -492,7 +493,7 @@ export function SafeStep({ wallet, found, known, loading, savedLoading, savedLoo
           <Button size="lg" variant="outline" onClick={() => setAdding(true)}>Add by address</Button>
         </div>
       )}
-      {!adding && error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {!adding && error && !lookupFailed && <p role="alert" className="text-xs text-destructive">{error}</p>}
     </>
   );
 }

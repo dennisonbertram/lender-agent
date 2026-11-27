@@ -15,19 +15,23 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn() }) }));
 
 let wallet = W1;
+let sessionLoading = false;
 vi.mock("@/client/auth/useSession", () => ({
-  useSession: () => ({ session: { address: wallet }, loading: false }),
+  useSession: () => ({ session: sessionLoading ? null : { address: wallet }, loading: sessionLoading }),
   useSignOut: () => vi.fn(),
 }));
 
 let ownedData: object[] = [];
+let ownedFetching = false;
 let mineData: object[] = [];
 let mineLoading = false;
 let mineError: Error | null = null;
 const refetch = vi.fn();
+const ownedWalletArgs: (string | undefined)[] = [];
+const mineWalletArgs: (string | undefined)[] = [];
 vi.mock("@/client/safes", () => ({
-  useOwnedSafes: () => ({ data: ownedData, isLoading: false, error: null, refetch }),
-  useSafes: () => ({ data: mineData, isLoading: mineLoading, error: mineError, refetch }),
+  useOwnedSafes: (w?: string) => { ownedWalletArgs.push(w); return { data: ownedData, isLoading: false, isFetching: ownedFetching, error: null, refetch }; },
+  useSafes: (w?: string) => { mineWalletArgs.push(w); return { data: mineData, isLoading: mineLoading, isFetching: mineLoading, error: mineError, refetch }; },
   useAddSafe: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 
@@ -48,7 +52,7 @@ const pendingSafe: ListedSafe = {
   pendingSetup: true, createdChainIds: [8453, 100], recordedChainIds: [8453, 100, 42161], deployedChainIds: [8453],
 };
 
-beforeEach(() => { localStorage.clear(); wallet = W1; mineLoading = false; mineError = null; });
+beforeEach(() => { localStorage.clear(); wallet = W1; sessionLoading = false; mineLoading = false; mineError = null; ownedFetching = false; ownedWalletArgs.length = 0; mineWalletArgs.length = 0; });
 afterEach(() => {
   cleanup();
   ownedData = [];
@@ -208,5 +212,38 @@ describe("onboarding page: a saved Safe whose setup stopped", () => {
     expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it("scopes the wallet lookups to the signed-in wallet", () => {
+    render(<OnboardingPage />);
+    expect(ownedWalletArgs).toContain(W1);
+    expect(mineWalletArgs).toContain(W1);
+  });
+
+  it("checks the session inside the wide picker shell, not the narrow card", () => {
+    sessionLoading = true;
+    render(<OnboardingPage />);
+    expect(document.querySelector("header")?.className).toMatch(/border-b/);
+    expect(document.querySelector("main")).toBeTruthy();
+    expect(screen.getByText(/Checking your session/)).toBeTruthy();
+    expect(document.querySelector(".max-w-md.bg-card")).toBeNull();
+    // The destination is not settled yet: no guide during the transient session check.
+    expect(document.querySelector("[data-guide-button]")).toBeNull();
+  });
+
+  it("does not offer picks or creation while the saved list is still loading", () => {
+    mineLoading = true;
+    ownedData = [{ address: SAFE_A, name: "Holiday", threshold: 1, ownerCount: 1, chainIds: [8453] }];
+    render(<OnboardingPage />);
+    expect((screen.getByRole("button", { name: `Open Safe ${shortAddress(SAFE_A)}` }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText("Other options"));
+    expect((screen.getByRole("button", { name: "Create a new Safe" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps showing results as arriving instead of done while discovery still fetches", () => {
+    ownedFetching = true;
+    render(<OnboardingPage />);
+    expect(screen.getByText("Looking for your Safes…")).toBeTruthy();
+    expect(screen.queryByText(/No Safe found for/)).toBeNull();
   });
 });

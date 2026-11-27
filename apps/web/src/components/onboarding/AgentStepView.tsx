@@ -34,6 +34,7 @@ export function AgentStepView({ safeAddress, createPath }: { safeAddress: string
 
   // Already on: skip a step with nothing left to do. Only from a read made after this page mounted, never from the cache
   // (Remove agent, then "Add agent to this Safe", lands here with a stale "on").
+  const checkingCachedActiveStatus = done && canChat && !status.isFetchedAfterMount && !addStarted.current;
   const goChat = done && canChat && status.isFetchedAfterMount && !addStarted.current;
   useEffect(() => {
     if (goChat && !redirected.current) {
@@ -63,12 +64,12 @@ export function AgentStepView({ safeAddress, createPath }: { safeAddress: string
       </OnboardingCard>
     );
   }
-  if (status.isPending) {
-    return <OnboardingCard><StateMessage kind="loading" label="Loading this Safe…" /></OnboardingCard>;
+  if (status.isPending || checkingCachedActiveStatus) {
+    return <OnboardingCard guide={false}><StateMessage kind="loading" label="Loading this Safe…" /></OnboardingCard>;
   }
   return (
-    <OnboardingCard>
-      <GuideIntro topicId="agent" />
+    <OnboardingCard guide={!goChat}>
+      {!goChat && <GuideIntro topicId="agent" />}
       <AgentStep
         safeName={safeName}
         safeAddress={safeAddress}

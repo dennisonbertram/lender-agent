@@ -12,13 +12,13 @@ import { type Services } from "@/server/services";
 import { monitorStatusFor } from "@/server/monitor/status";
 import { checkWorkerHealth, workerStallLimitMs } from "@/worker/health";
 import { NETWORK_OF, type Address, type ChainId } from "@/shared/types";
-import { SERVED_CHAIN_IDS } from "@/lib/safe-create";
-import { listSafesForWallet, servedOnly } from "@/server/auth/access";
+import { DISCOVERY_CHAIN_IDS, mergeOwnedSafeSlices, type OwnedSafeSlice } from "@/lib/owned-safes";
+import { listSafesForWallet } from "@/server/auth/access";
 import { resolveEnsNames, type EnsResolver } from "@/server/ens";
 import { loansFor, type ShellLoanView } from "@/server/loans";
 
 /** The networks searched for Safes: the ones the app serves (Base and Arbitrum). */
-const CHAINS: ChainId[] = servedOnly(SERVED_CHAIN_IDS);
+const CHAINS: ChainId[] = DISCOVERY_CHAIN_IDS;
 
 export const NOT_OWNER_ERROR = "You are not an owner of this Safe.";
 
@@ -71,48 +71,33 @@ async function readValue(services: Services, chainId: ChainId, safe: Address) {
   }
 }
 
+/**
+ * The wallet's owned Safes on one network: the Transaction Service's candidates, each confirmed on-chain, with
+ * balance and owner names when readable. One independently completable unit of work — the progressive picker asks
+ * for each network separately. On the fork only Base is searched (its Safe service throws for any other chain).
+ */
+export async function findOwnedSafesOnChain(services: Services, chainId: ChainId, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<OwnedSafeSlice[]> {
+  const ens = deps.ens ?? resolveEnsNames;
+  if (services.fork && chainId !== 8453) return [];
+  const addrs = await services.safeService(chainId).getSafesByOwner(wallet);
+  const checked = await Promise.all([...new Set(addrs.map((a) => a.toLowerCase()))].map(async (lc) => {
+    const address = addrs.find((a) => a.toLowerCase() === lc)!;
+    const r = await readOwned(services, chainId, address, wallet);
+    if (!r) return null;
+    const [value, names] = await Promise.all([
+      readValue(services, chainId, address),
+      ens(r.owners).catch(() => new Map<string, string>()),
+    ]);
+    const owners = r.owners.map((o) => ({ address: o, ...(names.get(o.toLowerCase()) ? { ens: names.get(o.toLowerCase())! } : {}) }));
+    return { address, chainId, threshold: r.threshold, ownerCount: r.owners.length, owners, ...(value ?? {}) };
+  }));
+  return checked.filter((c): c is OwnedSafeSlice => c !== null);
+}
+
 /** Safes the wallet owns, from the Transaction Service, each confirmed on-chain, with balance and owner names when readable. */
 export async function findOwnedSafes(services: Services, wallet: Address, deps: { ens?: EnsResolver } = {}): Promise<FoundSafe[]> {
-  const ens = deps.ens ?? resolveEnsNames;
-  type AggregatedSafe = FoundSafe & Required<Pick<FoundSafe, "networkDetails" | "balanceChainIds">>;
-  const found = new Map<string, AggregatedSafe>();
-  // The fork serves Base only; its Safe service throws for any other chain.
-  for (const chainId of services.fork ? CHAINS.filter((c) => c === 8453) : CHAINS) {
-    const addrs = await services.safeService(chainId).getSafesByOwner(wallet);
-    const checked = await Promise.all([...new Set(addrs.map((a) => a.toLowerCase()))].map(async (lc) => {
-      const address = addrs.find((a) => a.toLowerCase() === lc)!;
-      const r = await readOwned(services, chainId, address, wallet);
-      if (!r) return null;
-      const [value, names] = await Promise.all([
-        readValue(services, chainId, address),
-        ens(r.owners).catch(() => new Map<string, string>()),
-      ]);
-      const owners = r.owners.map((o) => ({ address: o, ...(names.get(o.toLowerCase()) ? { ens: names.get(o.toLowerCase())! } : {}) }));
-      return { address, chainId, threshold: r.threshold, ownerCount: r.owners.length, owners, ...(value ?? {}) };
-    }));
-    for (const c of checked) {
-      if (!c) continue;
-      const prev = found.get(c.address.toLowerCase());
-      if (prev) {
-        prev.chainIds.push(c.chainId);
-        prev.networkDetails.push({ chainId: c.chainId, threshold: c.threshold, ownerCount: c.ownerCount, owners: c.owners });
-        if (prev.balanceUsd === undefined || c.balanceUsd === undefined) { delete prev.balanceUsd; delete prev.assets; prev.balanceChainIds = []; }
-        else {
-          prev.balanceUsd += c.balanceUsd;
-          prev.balanceChainIds.push(c.chainId);
-          const by = new Map<string, number>();
-          for (const a of [...(prev.assets ?? []), ...(c.assets ?? [])]) by.set(a.symbol, (by.get(a.symbol) ?? 0) + a.amount);
-          prev.assets = [...by].map(([symbol, amount]) => ({ symbol, amount }));
-        }
-      }
-      else {
-        const { chainId: id, ...rest } = c;
-        found.set(c.address.toLowerCase(), { ...rest, chainIds: [id], balanceChainIds: c.balanceUsd === undefined ? [] : [id],
-          networkDetails: [{ chainId: id, threshold: c.threshold, ownerCount: c.ownerCount, owners: c.owners }] });
-      }
-    }
-  }
-  return [...found.values()];
+  const slices = await Promise.all(CHAINS.map((chainId) => findOwnedSafesOnChain(services, chainId, wallet, deps)));
+  return mergeOwnedSafeSlices(slices.flat());
 }
 
 /** Add a Safe the wallet owns to the user's list. Throws a 400 with the user-facing text; saves nothing on error. */

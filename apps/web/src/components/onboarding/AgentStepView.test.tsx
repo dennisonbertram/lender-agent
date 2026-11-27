@@ -39,6 +39,18 @@ describe("AgentStepView", () => {
     expect(replace).toHaveBeenCalledWith(`/s/${A}/chat`);
     expect(replace).toHaveBeenCalledTimes(1);
   });
+  it("keeps cached active status out of the setup guide while mount revalidation runs", () => {
+    status = { ...status, isFetchedAfterMount: false, isFetching: true };
+    const view = render(<AgentStepView safeAddress={A} />);
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Lender agent can now suggest transactions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add Lender agent" })).toBeNull();
+
+    status = { ...status, isFetchedAfterMount: true, isFetching: false };
+    // The same mounted query completes its authoritative read.
+    view.rerender(<AgentStepView safeAddress={A} />);
+    expect(replace).toHaveBeenCalledWith(`/s/${A}/chat`);
+  });
   it("never redirects from cached data", () => {
     status = { ...status, isFetchedAfterMount: false };
     render(<AgentStepView safeAddress={A} />);

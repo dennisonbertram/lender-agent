@@ -216,6 +216,19 @@ describe("SafeStep", () => {
     expect(row.className).toMatch(/flex-wrap/);
     expect(row.contains(filters)).toBe(true);
   });
+  it("keeps supported network filters in the heading row and puts one progress status after the tiles", () => {
+    render(<SafeStep loading savedLoading found={[{
+      address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453],
+    }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const filters = screen.getByRole("group", { name: "Show Safes on" });
+    const headingRow = screen.getByRole("heading", { name: "Choose a Safe" }).parentElement!;
+    expect(headingRow.contains(filters)).toBe(true);
+    const progress = screen.getAllByRole("status").filter((item) => /Checking your saved Safes|Looking for your Safes/.test(item.textContent ?? ""));
+    expect(progress).toHaveLength(1);
+    const tile = screen.getByRole("listitem");
+    const status = progress[0];
+    expect(tile.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
   it("flows recovery and regular Safes through the same grid while keeping named lists", () => {
     const recovery = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0003";
     render(<SafeStep found={[{
@@ -245,6 +258,16 @@ describe("SafeStep", () => {
     fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: `Open Safe Holiday ${shortAddress(A)}` }));
     expect(pick).toHaveBeenCalledWith(A);
   });
+  it("keeps partial discovery retryable and says more Safes may be missing", () => {
+    const retry = vi.fn();
+    render(<SafeStep found={[{ address: A, name: "Found Safe", threshold: 1, ownerCount: 1, chainIds: [8453] }]} lookupFailed existing={[]} onPick={() => {}} onAdd={() => {}} onRetry={retry} />);
+    const tile = screen.getByRole("listitem");
+    const message = screen.getByText(/Some Safes may be missing/);
+    const button = screen.getByRole("button", { name: "Retry" });
+    expect(tile.compareDocumentPosition(message) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(button);
+    expect(retry).toHaveBeenCalledOnce();
+  });
   it("a saved Safe whose setup never finished offers Finish setting up instead of a plain pick", () => {
     const resume = vi.fn();
     const pick = vi.fn();
@@ -271,7 +294,7 @@ describe("SafeStep", () => {
   });
   it("marks a testnet Safe", () => {
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [84532] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
-    expect(screen.getByText("Base Sepolia (test)")).toBeTruthy();
+    expect(within(screen.getByRole("listitem")).getByText("Base Sepolia (test)")).toBeTruthy();
   });
   it("with found Safes, Create is secondary and the heading says Choose a Safe", () => {
     render(<SafeStep found={[{ address: A, threshold: 2, ownerCount: 3, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} onCreate={() => {}} />);
@@ -417,6 +440,50 @@ describe("SafeStep", () => {
     expect(screen.getByText("Looking for your Safes…")).toBeTruthy();
     expect(screen.queryByText(/We did not find|We found/)).toBeNull();
     expect(screen.getByRole("button", { name: "Create a new Safe" }).className).not.toContain("bg-primary");
+  });
+  it("keeps a saved card mounted, open and focused while discovery upgrades it in place", () => {
+    const saved = A.toLowerCase();
+    const { rerender } = render(<SafeStep found={[]} known={[{ address: saved, name: "Holiday", chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tile = screen.getByRole("listitem");
+    const toggle = within(tile).getByRole("button", { name: "Address" });
+    fireEvent.click(toggle);
+    toggle.focus();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    // The wallet lookup verifies the saved Safe: it gains the found face without remounting.
+    rerender(<SafeStep found={[{ address: A, threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 7500, balanceChainIds: [8453] }]} known={[{ address: saved, name: "Holiday", chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const upgraded = screen.getByRole("listitem");
+    expect(upgraded).toBe(tile);
+    expect(upgraded.textContent).toContain("$7,500");
+    expect(upgraded.textContent).not.toContain("Saved — your wallet is checked again");
+    const upgradedToggle = within(upgraded).getByRole("button", { name: "Address and approvals" });
+    expect(upgradedToggle).toBe(toggle);
+    expect(upgradedToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(toggle);
+  });
+  it("keeps cards in their first-shown order while more Safes arrive", () => {
+    const B = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002";
+    const { rerender } = render(<SafeStep found={[{ address: A, name: "First", threshold: 1, ownerCount: 1, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const firstTile = screen.getByRole("listitem");
+    // A later batch adds a funded Safe: the card already shown keeps its place.
+    rerender(<SafeStep found={[
+      { address: B, name: "Funded later", threshold: 1, ownerCount: 1, chainIds: [8453], balanceUsd: 9000, balanceChainIds: [8453] },
+      { address: A, name: "First", threshold: 1, ownerCount: 1, chainIds: [8453] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    const tiles = screen.getAllByRole("listitem");
+    expect(tiles[0]).toBe(firstTile);
+    expect(within(tiles[0]).getByText("First")).toBeTruthy();
+    expect(tiles[1].textContent).toContain("Funded later");
+  });
+  it("does not announce an empty network while discovery is still running", () => {
+    const B = "0x5AfE5afe5AFe5afE5afE5aFe5afe5aFE5AFE0002";
+    const { rerender } = render(<SafeStep found={[
+      { address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453] },
+      { address: B, name: "Arbitrum Safe", threshold: 1, ownerCount: 1, chainIds: [42161] },
+    ]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Arbitrum" }));
+    // A refresh is still running and so far only the Base Safe has arrived.
+    rerender(<SafeStep loading found={[{ address: A, name: "Base Safe", threshold: 1, ownerCount: 1, chainIds: [8453] }]} existing={[]} onPick={() => {}} onAdd={() => {}} />);
+    expect(screen.queryByText("No Safes found on Arbitrum.")).toBeNull();
   });
   describe("balance and signers", () => {
     const ME = "0x00000000000000000000000000000000000000a1";

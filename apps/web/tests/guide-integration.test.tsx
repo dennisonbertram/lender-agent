@@ -13,6 +13,10 @@ const state = vi.hoisted(() => ({
   mine: [] as object[],
   mediaMatch: (_query: string): boolean => false,
   shell: {} as Record<string, unknown>,
+  session: null as { address: string } | null,
+  sessionLoading: false,
+  agentStatus: {} as Record<string, unknown>,
+  thread: {} as Record<string, unknown>,
 }));
 
 vi.mock("@/components/guide/Guide", () => ({
@@ -29,7 +33,7 @@ vi.mock("wagmi", () => ({
 }));
 
 vi.mock("@/client/auth/useSession", () => ({
-  useSession: () => ({ session: { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" }, loading: false, signIn: vi.fn(), signingIn: false, signInError: null }),
+  useSession: () => ({ session: state.session, loading: state.sessionLoading, signIn: vi.fn(), signingIn: false, signInError: null }),
   useSignOut: () => vi.fn(),
 }));
 
@@ -56,14 +60,14 @@ vi.mock("@/client/safes", () => ({
 }));
 vi.mock("@/client/create-safe", () => ({ useCreateSafeApi: () => ({}) }));
 vi.mock("@/client/agent", () => ({
-  useAgentStatus: () => ({ data: { networks: [], eligibleChainIds: [], canChat: false, otherChainIds: [] }, isPending: false, error: null, isFetchedAfterMount: false }),
+  useAgentStatus: () => state.agentStatus,
   useAddAgent: () => ({ add: vi.fn(), adding: false, progress: null, error: null }),
   useAddNetwork: () => ({ addNetwork: vi.fn(), adding: false }),
   chainName: () => "Base",
 }));
 vi.mock("@/client/proposals", () => ({ PROPOSAL_SENT_EVENT: "proposal-sent" }));
 vi.mock("@/client/activity", () => ({ useActivity: () => ({ data: [], isPending: false, error: null, refetch: vi.fn() }) }));
-vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ isPending: false, isError: false, data: [] }), useQueryClient: () => ({ clear: vi.fn() }) }));
+vi.mock("@tanstack/react-query", () => ({ useQuery: () => state.thread, useQueryClient: () => ({ clear: vi.fn(), removeQueries: vi.fn(), fetchQuery: vi.fn() }) }));
 vi.mock("@ai-sdk/react", () => ({ useChat: () => ({ messages: [], sendMessage: vi.fn(), setMessages: vi.fn(), status: "ready", error: undefined }) }));
 vi.mock("ai", () => ({ DefaultChatTransport: class {} }));
 vi.mock("@/components/agent/AgentWatchStatus", () => ({ AgentWatchStatus: () => null, useWatchStatus: () => ({ state: "ok", line: "" }) }));
@@ -83,6 +87,7 @@ import { ChatView } from "@/components/chat/ChatView";
 import { ActivityLog } from "@/components/activity/ActivityLog";
 import { SafeStep } from "@/components/onboarding/SafeStep";
 import { AppShell } from "@/components/shell/AppShell";
+import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { WrongWallet } from "@/components/proposals/WrongWallet";
 import { MinimalTopBar } from "@/components/shell/MinimalTopBar";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -99,6 +104,10 @@ beforeEach(() => {
   state.mine = [];
   state.mediaMatch = () => false;
   state.shell = {};
+  state.session = { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" };
+  state.sessionLoading = false;
+  state.agentStatus = { data: { networks: [], eligibleChainIds: [], canChat: false, otherChainIds: [] }, isPending: false, error: null, isFetchedAfterMount: false };
+  state.thread = { isPending: false, isError: false, error: null, data: [], refetch: vi.fn() };
   window.matchMedia = ((q: string) => ({
     matches: state.mediaMatch(q), media: q, onchange: null,
     addListener: () => {}, removeListener: () => {},
@@ -126,9 +135,22 @@ describe("guide entry points", () => {
     expect(container.querySelector("[data-guide-button]")).toBeNull();
   });
 
-  it("keeps the guide button on the Safe shell's loading and error bar", () => {
+  it("keeps the guide button on the Safe shell's error bar", () => {
     const { container } = render(<MinimalTopBar address="0xabc" />);
     expect(container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
+  });
+
+  it("suppresses the guide button on the Safe shell's loading bar — the destination is not settled yet", () => {
+    const { container } = render(<MinimalTopBar address="0xabc" guide={false} />);
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
+  });
+
+  it("suppresses the guide button in an onboarding card marked as transient", () => {
+    const settled = render(<OnboardingCard>content</OnboardingCard>);
+    expect(settled.container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
+    settled.unmount();
+    const transient = render(<OnboardingCard guide={false}>content</OnboardingCard>);
+    expect(transient.container.querySelector("[data-guide-button]")).toBeNull();
   });
 
   it("keeps exactly one guide button in the sidebar, with the wallet menu target", () => {
@@ -176,11 +198,26 @@ describe("guide intro topics", () => {
     expect(container.querySelector("[data-create-stub]")).toBeTruthy();
   });
 
-  it("carries the welcome topic and the guide button on the marketing homepage", () => {
+  it("carries the welcome topic and the guide button on the marketing homepage once the session check settles signed out", () => {
+    state.session = null;
     const { container } = render(<BorrowerHome />);
     expect(container.querySelector('[data-guide-intro="welcome"]')).toBeTruthy();
     expect(container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
     expect(container.querySelector('[data-guide-target="sign-in"]')).toBeTruthy();
+  });
+
+  it("suppresses the homepage guide while the session is unknown and for a signed-in user being sent on", () => {
+    state.session = null;
+    state.sessionLoading = true;
+    const loading = render(<BorrowerHome />);
+    expect(loading.container.querySelector("[data-guide-intro]")).toBeNull();
+    expect(loading.container.querySelector("[data-guide-button]")).toBeNull();
+    loading.unmount();
+    // A session means HomeSessionRedirect is about to replace this screen — nothing guide-related may flash.
+    state.session = { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" };
+    const signedIn = render(<BorrowerHome />);
+    expect(signedIn.container.querySelector("[data-guide-intro]")).toBeNull();
+    expect(signedIn.container.querySelector("[data-guide-button]")).toBeNull();
   });
 
   it("marks the agent step of onboarding", () => {
@@ -188,11 +225,47 @@ describe("guide intro topics", () => {
     expect(container.querySelector('[data-guide-intro="agent"]')).toBeTruthy();
   });
 
-  it("marks the chat screen with its topic and composer", () => {
+  it("suppresses the guide while the agent step loads", () => {
+    state.agentStatus = { isPending: true, isFetchedAfterMount: false, data: undefined, error: null };
+    const { container } = render(<AgentStepView safeAddress="0xabc" />);
+    expect(container.querySelector("[data-guide-intro]")).toBeNull();
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
+  });
+
+  it("suppresses the guide while the agent step redirects to an already-set-up chat", () => {
+    state.agentStatus = {
+      isPending: false, isFetchedAfterMount: true, error: null,
+      data: { networks: [{ chainId: 8453, deployed: true, added: true }], eligibleChainIds: [8453], canChat: true, otherChainIds: [] },
+    };
+    const { container } = render(<AgentStepView safeAddress="0xabc" />);
+    expect(container.querySelector("[data-guide-intro]")).toBeNull();
+    expect(container.querySelector("[data-guide-button]")).toBeNull();
+  });
+
+  it("keeps the guide on the agent step's settled error states", () => {
+    state.agentStatus = { isPending: false, isFetchedAfterMount: true, data: undefined, error: new Error("boom") };
+    const { container } = render(<AgentStepView safeAddress="0xabc" />);
+    expect(container.querySelectorAll("[data-guide-button]")).toHaveLength(1);
+  });
+
+  it("marks the chat screen with its topic and composer once the thread is loaded and authorized", () => {
     state.shell = { agentOn: true };
     const { container } = render(<ChatView address="0xabc" />);
     expect(container.querySelector('[data-guide-intro="chat"]')).toBeTruthy();
     expect(container.querySelector('[data-guide-target="chat-compose"]')).toBeTruthy();
+  });
+
+  it("suppresses the chat intro while the conversation or its ownership check is unresolved", () => {
+    state.shell = { agentOn: true };
+    state.thread = { isPending: true, isError: false, error: null, data: undefined, refetch: vi.fn() };
+    const pending = render(<ChatView address="0xabc" />);
+    expect(pending.container.querySelector("[data-guide-intro]")).toBeNull();
+    pending.unmount();
+    const denied = new Error("forbidden") as Error & { status: number };
+    denied.status = 403;
+    state.thread = { isPending: false, isError: true, error: denied, data: undefined, refetch: vi.fn() };
+    const forbidden = render(<ChatView address="0xabc" />);
+    expect(forbidden.container.querySelector("[data-guide-intro]")).toBeNull();
   });
 
   it("marks the activity screen with its topic and list", () => {

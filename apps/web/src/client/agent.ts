@@ -25,7 +25,7 @@ async function call<T>(url: string, method: string, body?: unknown): Promise<T> 
 }
 
 export function useAgentStatus(address: string) {
-  return useQuery({ queryKey: statusKey(address), queryFn: () => call<AgentStatus>(`/api/safes/${address}/agent`, "GET") });
+  return useQuery({ queryKey: statusKey(address), queryFn: () => call<AgentStatus>(`/api/safes/${address}/agent`, "GET"), refetchOnMount: "always" });
 }
 
 type WireTypedData = {
